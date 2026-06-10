@@ -13,37 +13,37 @@ controlled via grandMA3 Bitmap fixture mapping.
 │                        CONTENT GENERATION                               │
 │                                                                         │
 │   monolith_ceiling_videos.py                                            │
-│   ┌──────────────┐    ┌─────────────────────┐    ┌──────────────────┐   │
-│   │  NumPy       │    │  Pattern algorithm   │    │  FfmpegWriter   │   │
-│   │  canvas      │───▶│  (57 generators)     │───▶│  pipe: gray→VP8│   │
-│   │  480×9 px    │    │  float32 0–255       │    │  WebM output    │   │
-│   │  float32     │    └─────────────────────┘    └────────┬─────────┘   │
-│   └──────────────┘                                        │            │
-└───────────────────────────────────────────────────────────┼────────────┘
-                                                            │
-                              Monolith_video_folder/*.webm  │
-                                                            ▼
+│   ┌──────────────┐    ┌─────────────────────┐     ┌──────────────────┐  │
+│   │  NumPy       │    │  Pattern algorithm   │    │  FfmpegWriter    │  │
+│   │  canvas      │───▶│  (57 generators)     │───▶│  pipe: gray→VP8 │  │
+│   │  480×9 px    │    │  float32 0–255       │    │  WebM output     │  │
+│   │  float32     │    └─────────────────────┘     └────────┬─────────┘  │
+│   └──────────────┘                                         │            │
+└─────────────────────────────────────────────────────────── ┼────────────┘
+                                                             │
+                              Monolith_video_folder/*.webm   │
+                                                             ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                          grandMA3  v2.3                                 │
 │                                                                         │
 │   Media Pool ──▶  Video Pool ──▶  Bitmap Object                        │
-│                                   ┌───────────────────────────────┐    │
-│                                   │  Bitmap Configuration         │    │
-│                                   │  Canvas Width  = 480          │    │
-│                                   │  Canvas Height = 9            │    │
-│                                   │  Content Mode  = Clip         │    │
-│                                   │  Bitmap Channel Source = Luma │    │
-│                                   └──────────────┬────────────────┘    │
-│                                                  │ Luma → Dimmer attr  │
-└──────────────────────────────────────────────────┼─────────────────────┘
+│                                   ┌───────────────────────────────┐     │
+│                                   │  Bitmap Configuration         │     │
+│                                   │  Canvas Width  = 480          │     │
+│                                   │  Canvas Height = 9            │     │
+│                                   │  Content Mode  = Clip         │     │
+│                                   │  Bitmap Channel Source = Luma │     │
+│                                   └──────────────┬────────────────┘     │
+│                                                  │ Luma → Dimmer attr   │
+└──────────────────────────────────────────────────┼───────────────────── ┘
                                                    │  DMX (Art-Net / sACN)
                                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                       CEILING FIXTURE ARRAY                             │
 │                                                                         │
-│   9 rows × 24 bars × 20 LEDs = 4,320 individual LED pixels             │
-│   GLP Impression X4 Bar 20  (Mode 1 = 20-pixel, 47 DMX ch/bar)         │
-│   CW + WW channels driven by the same Dimmer value                     │
+│   9 rows × 24 bars × 20 LEDs = 4,320 individual LED pixels              │
+│   GLP Impression X4 Bar 20  (Mode 1 = 20-pixel, 47 DMX ch/bar)          │
+│   CW + WW channels driven by the same Dimmer value                      │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -162,7 +162,7 @@ monolith_ceiling_videos.py
 │   ├── ease_out(t)
 │   └── ease_in_out(t)
 │
-├── Pattern functions  make_01_…() … make_57_…()
+├── Pattern functions  make_01_…() … make_117_…()
 │   └── (see Video Library below)
 │
 └── __main__
@@ -179,7 +179,7 @@ OpenCV's VP8 encoder converts `BGR → YUV 4:2:0` internally. The lossy YUV quan
 ## Running the Script
 
 ```powershell
-# Render all 57 videos (takes ~5–10 min)
+# Render all 117 videos (takes ~25–35 min)
 $env:PYTHONIOENCODING = "utf-8"
 python monolith_ceiling_videos.py
 
@@ -307,6 +307,176 @@ Output goes to `Monolith_video_folder/` relative to the script.
 | 70 | `70_surface_tension.webm` | Droplet blobs cohese/split via surface-tension forces |
 | 71 | `71_turbulence_burst.webm` | Kolmogorov energy cascade across octaves |
 | 72 | `72_symbiosis.webm` | Two particle populations: A drifts right, B seeks A and flares on contact |
+
+### Organic Particle Patterns — Fire / Sparks / Flocks / Descent  (73–80)
+
+| # | File | Description |
+|---|------|-------------|
+| 73 | `73_ember_drift.webm` | Slow rising fire embers from base row, occasional crackle flares |
+| 74 | `74_murmuration_slow.webm` | 120 boids flocking at 4× slower speed; speed → brightness |
+| 75 | `75_sparkler.webm` | Figure-8 emitter sprays fading spark particles with gravity |
+| 76 | `76_crackle_field.webm` | Rare electric discharge flashes + expanding dim rings |
+| 77 | `77_migration.webm` | V-formation bird clusters crossing slowly left → right |
+| 78 | `78_deep_fire.webm` | Gaussian fire wisps rising through all 9 rows with breath modulation |
+| 79 | `79_slow_aurora_veil.webm` | 5-band aurora, each with independent 20–35 s amplitude cycles |
+| 80 | `80_descent.webm` | Particles fall top → bottom; slow = bright, fast = dim; radial splash on impact |
+
+### Slow Atmosphere / Smoke-Diffusion  (81–100)
+
+| # | File | Description |
+|---|------|-------------|
+| 81 | `81_gossamer_drift.webm` | 80 motes with triangle fade envelope, very slow drift |
+| 82 | `82_smoke_tendrils.webm` | 8 vertical Gaussian wisps meandering in X with breath |
+| 83 | `83_pollen_cloud.webm` | 200 Brownian particles, very dim, fills all 9 rows |
+| 84 | `84_breath_motes.webm` | Gaussian blobs slowly expand then dissolve |
+| 85 | `85_dust_settle.webm` | 60 particles spawning at top row, drifting slowly down |
+| 86 | `86_candle_smoke.webm` | Single plume rises and widens from a wandering emitter |
+| 87 | `87_fog_drift.webm` | 4 horizontal fog bands drifting in Y with horizontal modulation |
+| 88 | `88_nebula_float.webm` | 5 large soft Gaussian blobs floating very slowly |
+| 89 | `89_incense_curl.webm` | Sinusoidal smoke ribbon rising from a slow wandering emitter |
+| 90 | `90_gentle_snow.webm` | 40 flakes falling very slowly with lateral wobble |
+| 91 | `91_deep_float.webm` | 60 dim random-walk particles with rare bright pulse flashes |
+| 92 | `92_ash_settle.webm` | 50 particles drifting right + slowly down (wind-swept ash) |
+| 93 | `93_corona_drift.webm` | 40 particles orbiting a slowly wandering centre point |
+| 94 | `94_spirit_lights.webm` | 8 lights wandering with slow 10–20 s fade-in/fade-out cycles |
+| 95 | `95_heat_shimmer.webm` | 6 layers of oscillating vertical brightness bands |
+| 96 | `96_dust_vortex.webm` | 50 particles in slow spiral around a drifting centre |
+| 97 | `97_void_bloom.webm` | Dark field — rare dim expanding ring-blooms |
+| 98 | `98_suspension.webm` | 100 particles oscillating gently around fixed home positions |
+| 99 | `99_slow_membrane.webm` | 4 full-width waves with 30–60 s amplitude beating cycles |
+| 100 | `100_starfield_drift.webm` | 3 parallax layers of dim drifting pixels |
+
+### Depth-Travel Atmosphere — Front ↔ Back  (101–110)
+
+All patterns use a **beating envelope** (`sin(2π/T1) × 0.5+0.5) × (sin(2π/T2) × 0.5+0.5)`) so brightness spends most time near 0, rises slowly to mid or peak, then falls back organically.
+
+| # | File | Description |
+|---|------|-------------|
+| 101 | `101_depth_fog_roll.webm` | Gaussian fog front drifts Y=0→8→0 over 28 s, beating amp |
+| 102 | `102_depth_row_breath.webm` | Each of the 9 rows breathes its own beating period → rolling depth wave |
+| 103 | `103_depth_tide_swell.webm` | Sigmoid waterline rises and falls — rows activate progressively |
+| 104 | `104_depth_slow_wave.webm` | Two phase-gradient waves traveling in opposite depth directions |
+| 105 | `105_depth_aurora_bands.webm` | 3 narrow bands drifting at different Y speeds with individual envelopes |
+| 106 | `106_depth_layer_bloom.webm` | Random depth rows bloom with raised-cosine envelope (8–20 s each) |
+| 107 | `107_depth_hump_travel.webm` | Single brightness spotlight sweeps Y=0→8→0 over 30 s |
+| 108 | `108_depth_breath_expand.webm` | Centre Gaussian sigma breathes 0.4→4.5 (narrows/widens), peak on 35 s |
+| 109 | `109_depth_veil_layers.webm` | 5 overlapping wide hazes drifting at different Y speeds |
+| 110 | `110_depth_ripple_pulse.webm` | 1-D ring pulses expand outward in depth from a random row |
+
+### Scrolling Text  (111–117)
+
+5×7 pixel bitmap font, capitals only.  Scroll: right → left at 15 px/s (1 px every 2 frames).  Glyphs sit in rows 1–7 (1 px top/bottom margin).  At 4× preview scale each letter is 20×28 px — readable through smoke.
+
+| # | File | Names |
+|---|------|-------|
+| 111 | `111_julian_charriere.webm` | JULIAN CHARRIERE |
+| 112 | `112_thomas_bangalter.webm` | THOMAS BANGALTER |
+| 113 | `113_rampa.webm` | RAMPA |
+| 114 | `114_felix_deufel.webm` | FELIX DEUFEL |
+| 115 | `115_baptiste_schicklin.webm` | BAPTISTE SCHICKLIN |
+| 116 | `116_victor_mazon.webm` | VICTOR MAZON |
+| 117 | `117_all_names.webm` | All six names in a single continuous loop |
+
+---
+
+## OSC Spatial Bridge — `monolith_osc_spatial.py`
+
+Real-time bridge from **IEM MultiEncoder** (spatial audio panner) to the 480×9 LED ceiling grid.  Each audio source becomes a live bright zone on the ceiling, position driven by the OSC azimuth/elevation output of the encoder.
+
+### System diagram
+
+```
+DAW / IEM MultiEncoder
+        │  UDP OSC  (port 9010)
+        │  /MultiEncoder/azimuthX    -180 … +180°
+        │  /MultiEncoder/elevationX   -90 … +90°
+        │  /MultiEncoder/gainX        dB
+        ▼
+monolith_osc_spatial.py
+        │
+        ├── az_to_xy(azimuth)  → (x: 0–479, y: 0–8)
+        │     x = (1 - sin(az)) / 2 × 479
+        │     y = (1 - cos(az)) / 2 × 8
+        │
+        ├── Exponential smoothing  α = 0.15  (sluggish → glassy motion)
+        │
+        ├── Gain modulation  peak ∝ 10^(gain_dB / 20)
+        │
+        ├── Per-source trails  (deque, length 25 frames, alpha fade)
+        │
+        ├── OpenCV live preview  960×290 px
+        │   ├── 960×180 px  — grid display (2× X, 20× Y scale)
+        │   └── 960×110 px  — control panel (pill buttons)
+        │
+        ├── Polar panner overlay  420×420 px  (press P)
+        │
+        └── FfmpegWriter  →  Monolith_video_folder/osc_live_TIMESTAMP.webm
+              1920×36 px, VP8, records while E is held
+```
+
+### Keyboard controls
+
+| Key | Action |
+|-----|--------|
+| `V` | Cycle viz mode: **dot → blob-XS → blob-S → blob-M → blob-L** |
+| `T` | Toggle motion trails on / off |
+| `Space` | Freeze / unfreeze display |
+| `P` | Toggle polar panner overlay |
+| `E` | Toggle WebM recording to `Monolith_video_folder/` |
+| `F` | Filter: show only one source (type source number 1–N, Enter to confirm) |
+| `R` | Reset all source positions |
+| `Q` | Quit |
+
+### Launch
+
+```powershell
+# Kill any existing Python instance first, then start
+Get-Process python* | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 400
+C:\Users\ubema\AppData\Local\Programs\Python\Python311\python.exe monolith_osc_spatial.py --ip 0.0.0.0 --port 9010
+```
+
+Options:
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--ip` | `0.0.0.0` | OSC listen address |
+| `--port` | `9010` | OSC UDP port |
+| `--names` | _(none)_ | Path to CSV file mapping source numbers to names |
+
+### Source names CSV
+
+Create a plain text file (e.g. `sources.csv`) and pass it with `--names sources.csv`, or place it in the script directory and it will be loaded automatically:
+
+```
+1,Violin I
+2,Violin II
+3,Viola
+4,Cello
+5,Bass
+```
+
+### OSC message format
+
+IEM MultiEncoder sends messages of the form:
+
+```
+/MultiEncoder/azimuth1    f  <degrees>
+/MultiEncoder/elevation1  f  <degrees>
+/MultiEncoder/gain1       f  <dB>
+```
+
+The trailing integer is the 1-based source index.  Up to 64 sources supported simultaneously.
+
+### Recording output
+
+While recording (`E` key), frames are piped to ffmpeg in real time and saved as:
+
+```
+Monolith_video_folder/osc_live_YYYYMMDD_HHMMSS.webm
+```
+
+Resolution: **1920×36** (4× upscale of the 480×9 grid), VP8, 30 fps — identical format to the generated ceiling videos.
 
 ---
 
