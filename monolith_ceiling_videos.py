@@ -3266,6 +3266,1601 @@ def make_72_symbiosis() -> None:
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ORGANIC PARTICLE PATTERNS  (73 – 80)
+# All motion is 4× slower than comparable earlier scenes.
+# All patterns use wide dynamic range: dim ambients 5–20/255,
+# bright peaks 180–240/255, never flat.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 73 – EMBER DRIFT  (slow fire particles)
+# Hot embers rise from a smouldering base row (Y=8).  Each ember is a
+# single pixel that drifts upward (toward Y=0) in a slow turbulent
+# current, fading as it cools.  Occasionally a pixel re-ignites brightly
+# before dimming again — the "crackle" of dying coals.
+# Very dark base (~4/255).  Embers range from dim (40/255) to white (235/255).
+
+def make_73_ember_drift() -> None:
+    name = "73_ember_drift.webm"
+    print(f"[73] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(7300)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+
+    MAX_EMBERS   = 30
+    SPAWN_PROB   = 0.006
+
+    embers: list[dict] = []
+
+    def new_ember():
+        life = rng2.integers(180, 480)
+        return dict(
+            x=float(rng2.integers(0, GW)), y=float(GH - 1),
+            vy=rng2.uniform(0.004, 0.018), vx=rng2.uniform(-0.04, 0.04),
+            life=life, max_life=life, peak=rng2.uniform(140, 235),
+        )
+
+    TOTAL = FPS * 90
+    for f in range(TOTAL):
+        buf *= 0.985
+        if len(embers) < MAX_EMBERS and rng2.random() < SPAWN_PROB:
+            embers.append(new_ember())
+        alive = []
+        for e in embers:
+            e["life"] -= 1
+            if e["life"] <= 0:
+                continue
+            e["y"] -= e["vy"]
+            e["x"] += e["vx"] + 0.06 * math.sin(f * 0.04 + e["x"] * 0.3)
+            e["x"] = e["x"] % GW
+            if e["y"] < 0:
+                continue
+            t = e["life"] / e["max_life"]
+            crackle = 1.6 if rng2.random() < 0.008 else 1.0
+            bright  = e["peak"] * crackle * (0.15 + 0.85 * math.sqrt(t))
+            px = int(round(e["x"])) % GW
+            py = max(0, min(GH - 1, int(round(e["y"]))))
+            buf[py, px] = min(255, buf[py, px] + bright)
+            alive.append(e)
+        embers = alive
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 74 – MURMURATION SLOW  (bird flock, 4× slower than scene 43)
+# 120 boids cohere, separate, align at glacial speed.
+# Speed → brightness: fast = bright (200+), coasting = dim (25–60).
+
+def make_74_murmuration_slow() -> None:
+    name = "74_murmuration_slow.webm"
+    print(f"[74] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(7400)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+
+    N = 120
+    px = rng2.uniform(0, GW, N)
+    py = rng2.uniform(0, GH, N)
+    vx = rng2.uniform(-0.05, 0.05, N)
+    vy = rng2.uniform(-0.012, 0.012, N)
+
+    COHESION   = 0.0004
+    SEPARATION = 0.06
+    SEP_RADIUS = 18.0
+    ALIGNMENT  = 0.006
+    MAX_VX     = 0.22
+    MAX_VY     = 0.055
+    TOTAL      = FPS * 100
+
+    for _ in range(TOTAL):
+        buf *= 0.93
+        for i in range(N):
+            dx   = (px - px[i] + GW / 2) % GW - GW / 2
+            dy   = py - py[i]
+            near = (np.abs(dx) < 60) & (np.abs(dy) < 3) & (np.arange(N) != i)
+            if near.sum() > 0:
+                vx[i] += COHESION   * (px[near].mean() - px[i])
+                vy[i] += COHESION   * (py[near].mean() - py[i])
+                vx[i] += ALIGNMENT  * (vx[near].mean() - vx[i])
+                vy[i] += ALIGNMENT  * (vy[near].mean() - vy[i])
+            too_close = (np.abs(dx) < SEP_RADIUS) & (np.abs(dy) < 1.5) & (np.arange(N) != i)
+            if too_close.sum() > 0:
+                vx[i] -= SEPARATION * dx[too_close].mean()
+                vy[i] -= SEPARATION * dy[too_close].mean()
+            vx[i] = np.clip(vx[i], -MAX_VX, MAX_VX)
+            vy[i] = np.clip(vy[i], -MAX_VY, MAX_VY)
+            px[i] = (px[i] + vx[i]) % GW
+            py[i] = np.clip(py[i] + vy[i], 0, GH - 1)
+            bright = float(np.clip(20 + math.hypot(vx[i], vy[i]) * 800, 20, 210))
+            xi = int(round(px[i])) % GW
+            yi = int(round(py[i]))
+            buf[yi, xi] = min(255, buf[yi, xi] + bright)
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 75 – SPARKLER
+# Slow figure-8 emitter sprays bright sparks that fade in ~0.6 s.
+# Emitter itself pulses; spark brightness scales quadratically with life.
+
+def make_75_sparkler() -> None:
+    name = "75_sparkler.webm"
+    print(f"[75] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(7500)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    TOTAL   = FPS * 90
+    SPAWN_N = 6
+    sparks: list[dict] = []
+
+    for f in range(TOTAL):
+        buf *= 0.91
+        t   = f / TOTAL
+        ex  = GW / 2 + GW * 0.32 * math.sin(2 * math.pi * t * 1.5)
+        ey  = (GH - 1) / 2 + (GH - 1) * 0.38 * math.sin(2 * math.pi * t * 0.75)
+        bx  = int(round(ex)) % GW
+        by  = int(np.clip(round(ey), 0, GH - 1))
+        buf[by, bx] = min(255, buf[by, bx] + 180 + 55 * math.sin(f * 0.35))
+        for _ in range(SPAWN_N):
+            angle = rng2.uniform(0, 2 * math.pi)
+            speed = rng2.uniform(0.05, 0.35)
+            lspan = rng2.integers(14, 22)
+            sparks.append(dict(
+                x=float(ex), y=float(ey),
+                vx=speed * math.cos(angle), vy=speed * math.sin(angle) * 0.3,
+                life=lspan, max_life=lspan, bright=rng2.uniform(170, 235),
+            ))
+        alive = []
+        for s in sparks:
+            s["life"] -= 1
+            if s["life"] <= 0:
+                continue
+            s["x"]  += s["vx"]
+            s["y"]  += s["vy"]
+            s["vy"] += 0.004
+            if not (0 <= s["x"] < GW and 0 <= s["y"] < GH):
+                continue
+            tl = s["life"] / s["max_life"]
+            sx = int(round(s["x"])) % GW
+            sy = int(np.clip(round(s["y"]), 0, GH - 1))
+            buf[sy, sx] = min(255, buf[sy, sx] + s["bright"] * tl * tl)
+            alive.append(s)
+        sparks = alive
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 76 – CRACKLE FIELD  (electric discharge static)
+# Random cells discharge with a bright flash + expanding dim ring.
+# ~1 discharge every 2 s.  Dark base; peak 230+/255.
+
+def make_76_crackle_field() -> None:
+    name = "76_crackle_field.webm"
+    print(f"[76] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(7600)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    TOTAL = FPS * 100
+    discharges: list[dict] = []
+    DISCHARGE_PROB = 0.016
+
+    for f in range(TOTAL):
+        buf *= 0.978
+        if rng2.random() < DISCHARGE_PROB:
+            discharges.append(dict(
+                cx=float(rng2.integers(0, GW)), cy=float(rng2.integers(0, GH)),
+                radius=0.0, age=0,
+                max_age=rng2.integers(55, 120), peak=rng2.uniform(170, 230),
+            ))
+        alive = []
+        for d in discharges:
+            d["age"] += 1
+            if d["age"] > d["max_age"]:
+                continue
+            t = d["age"] / d["max_age"]
+            d["radius"] = t * 28.0
+            if d["age"] <= 5:
+                cx_i = int(round(d["cx"])) % GW
+                cy_i = int(np.clip(round(d["cy"]), 0, GH - 1))
+                buf[cy_i, cx_i] = min(255, buf[cy_i, cx_i] + d["peak"] * (1 - t))
+            dist = np.sqrt(((xs - d["cx"]) ** 2)[None, :] + ((ys - d["cy"]) ** 2)[:, None])
+            ring = np.exp(-0.5 * ((dist - d["radius"]) / 2.5) ** 2)
+            buf  = np.clip(buf + d["peak"] * 0.45 * (1 - t) * ring, 0, 255)
+            alive.append(d)
+        discharges = alive
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 77 – MIGRATION  (bird V-formations crossing slowly left → right)
+# 8 clusters of 5–12 birds in V-formation, 4× slower than meteor.
+# Leader brightest (180–220); trailing birds dim progressively.
+
+def make_77_migration() -> None:
+    name = "77_migration.webm"
+    print(f"[77] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(7700)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    N_CLUSTERS = 8
+    BASE_SPEED = 0.12
+    clusters   = []
+    for ci in range(N_CLUSTERS):
+        n       = rng2.integers(5, 13)
+        lead_x  = rng2.uniform(-GW, 0)
+        lead_y  = rng2.uniform(0.5, GH - 1.5)
+        offsets = [(0.0, 0.0)] + [
+            (-rng2.uniform(4, 14) * (j + 1),
+              rng2.choice([-1, 1]) * rng2.uniform(0.3, 1.2) * (j + 1))
+            for j in range(n - 1)
+        ]
+        clusters.append(dict(
+            x=lead_x, y=lead_y, n=n, offsets=offsets,
+            speed=BASE_SPEED * rng2.uniform(0.8, 1.2),
+            vy=rng2.uniform(-0.003, 0.003),
+        ))
+    TOTAL = FPS * 110
+    for f in range(TOTAL):
+        buf *= 0.92
+        for c in clusters:
+            c["x"] += c["speed"]
+            c["y"] = np.clip(c["y"] + c["vy"] + 0.004 * math.sin(f * 0.02), 0.2, GH - 1.2)
+            if c["x"] > GW + 20:
+                c["x"] = -rng2.uniform(20, 120)
+                c["y"] = rng2.uniform(0.5, GH - 1.5)
+            for bi, (ox, oy) in enumerate(c["offsets"]):
+                bx = c["x"] + ox
+                by = c["y"] + oy
+                if not (0 <= bx < GW and 0 <= by < GH):
+                    continue
+                t_bright = 1.0 - bi / c["n"]
+                bright   = 60 + 160 * t_bright * t_bright
+                xi = int(round(bx)) % GW
+                yi = int(np.clip(round(by), 0, GH - 1))
+                buf[yi, xi] = min(255, buf[yi, xi] + bright)
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 78 – DEEP FIRE  (slow rising fire wisps through all 9 rows)
+# N Gaussian wisps rise from Y=8 toward Y=0, widening and dimming.
+# Intensity modulated by 8–14 s breathing envelope.
+# Floor ~6/255; peaks 200+/255 at base.
+
+def make_78_deep_fire() -> None:
+    name = "78_deep_fire.webm"
+    print(f"[78] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(7800)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    N_WISPS = 14
+    wisps = [dict(
+        x=rng2.uniform(0, GW), phase=rng2.uniform(0, 2 * math.pi),
+        speed=rng2.uniform(0.004, 0.012), sigma_x=rng2.uniform(12, 40),
+        period=rng2.uniform(FPS * 8, FPS * 14), peak=rng2.uniform(160, 210),
+        vx=rng2.uniform(-0.03, 0.03),
+    ) for _ in range(N_WISPS)]
+    TOTAL = FPS * 100
+    for f in range(TOTAL):
+        canvas = np.full((GH, GW), 6.0, dtype=np.float32)
+        for wisp in wisps:
+            wisp["phase"] += wisp["speed"]
+            y_ctr   = GH - 1 - (wisp["phase"] % (GH - 1))
+            sigma_y = 0.7 + 1.2 * (1 - y_ctr / (GH - 1))
+            breath  = 0.6 + 0.4 * math.sin(2 * math.pi * f / wisp["period"])
+            peak    = wisp["peak"] * (0.2 + 0.8 * (y_ctr / (GH - 1))) * breath
+            wisp["x"] = (wisp["x"] + wisp["vx"]) % GW
+            dx = xs - wisp["x"]
+            dx = np.where(dx > GW / 2, dx - GW, np.where(dx < -GW / 2, dx + GW, dx))
+            gx = np.exp(-0.5 * (dx / wisp["sigma_x"]) ** 2)
+            gy = np.exp(-0.5 * ((ys - y_ctr) / sigma_y) ** 2)
+            canvas += peak * np.outer(gy, gx)
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 79 – SLOW AURORA VEIL  (ultra-slow, high dynamic range aurora)
+# 5 bands drift 4× slower than scene 09; each breathes with a 20–35 s
+# amplitude cycle — peaks 120–195/255, troughs 5–25/255.
+
+def make_79_slow_aurora_veil() -> None:
+    name = "79_slow_aurora_veil.webm"
+    print(f"[79] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(7900)
+    xs   = np.linspace(0, 2 * math.pi * 3, GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    bands = [dict(
+        phase=rng2.uniform(0, 2 * math.pi),
+        drift=rng2.uniform(0.0007, 0.0018),
+        freq=rng2.uniform(0.6, 1.8),
+        y_ctr=rng2.uniform(0.8, GH - 1.8),
+        y_sig=rng2.uniform(1.2, 3.5),
+        breath_period=rng2.uniform(FPS * 20, FPS * 35),
+        breath_offset=rng2.uniform(0, 2 * math.pi),
+        peak_max=rng2.uniform(120, 195),
+        peak_min=rng2.uniform(5,   25),
+    ) for _ in range(5)]
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        for b in bands:
+            b["phase"] += b["drift"]
+            wave  = 0.5 + 0.5 * np.sin(b["freq"] * xs + b["phase"])
+            y_env = np.exp(-0.5 * ((ys - b["y_ctr"]) / b["y_sig"]) ** 2)
+            br    = math.sin(2 * math.pi * f / b["breath_period"] + b["breath_offset"]) * 0.5 + 0.5
+            peak  = b["peak_min"] + (b["peak_max"] - b["peak_min"]) * br
+            canvas += peak * np.outer(y_env, wave)
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 80 – DESCENT  (slow particle rain with mass-brightness tradeoff)
+# 60 particles fall from Y=0 toward Y=8.
+# Slow particles (pollen) glow 160–220/255; fast (stones) dim 30–70/255.
+# On reaching Y=8: brief radial splash burst, then reset to top.
+
+def make_80_descent() -> None:
+    name = "80_descent.webm"
+    print(f"[80] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(8000)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    N    = 60
+
+    def new_particle(stagger=0.0):
+        speed  = rng2.choice(
+            [rng2.uniform(0.006, 0.018), rng2.uniform(0.045, 0.11)],
+            p=[0.70, 0.30])
+        return dict(
+            x=float(rng2.integers(0, GW)),
+            y=-stagger,
+            speed=float(speed),
+            bright=float(225 - 190 * min(1, speed / 0.11)),
+            vx=rng2.uniform(-0.008, 0.008),
+        )
+
+    particles = [new_particle(stagger=rng2.uniform(0, GH * 0.5)) for _ in range(N)]
+    splashes: list[dict] = []
+    TOTAL = FPS * 100
+    for f in range(TOTAL):
+        buf *= 0.97
+        for p in particles:
+            p["y"] += p["speed"]
+            p["x"]  = (p["x"] + p["vx"]) % GW
+            if p["y"] > GH - 1:
+                splashes.append(dict(cx=p["x"], cy=float(GH - 1),
+                                     r=0.0, life=20, peak=p["bright"] * 0.8))
+                p.update(new_particle())
+                p["y"] = 0.0
+                continue
+            xi = int(round(p["x"])) % GW
+            yi = int(np.clip(round(p["y"]), 0, GH - 1))
+            buf[yi, xi] = min(255, buf[yi, xi] + p["bright"])
+        alive_sp = []
+        for s in splashes:
+            s["life"] -= 1
+            if s["life"] <= 0:
+                continue
+            s["r"] += 0.9
+            tl   = 1 - s["life"] / 20
+            dist = np.sqrt(((xs - s["cx"]) ** 2)[None, :] + ((ys - s["cy"]) ** 2)[:, None])
+            ring = np.exp(-0.5 * ((dist - s["r"]) / 1.2) ** 2)
+            buf  = np.clip(buf + s["peak"] * (1 - tl) * ring, 0, 255)
+            alive_sp.append(s)
+        splashes = alive_sp
+        write_frame(w, buf)
+    close(w, name)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SLOW ATMOSPHERE / SMOKE-DIFFUSION PATTERNS  (81 – 100)
+# Designed for projection through smoke haze: very slow motion, long fade
+# times, particles appearing and dissolving across all 9 rows.
+# Ambient floor 4–25 / 255, peaks 80–155 / 255.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 81 – GOSSAMER DRIFT  (80 motes, triangle-envelope fade, very slow)
+def make_81_gossamer_drift() -> None:
+    name = "81_gossamer_drift.webm"
+    print(f"[81] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(8100)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    N    = 80
+
+    def new_mote():
+        life = int(rng2.integers(90, 270))
+        return dict(x=float(rng2.integers(0, GW)), y=float(rng2.uniform(0, GH - 1)),
+                    vx=float(rng2.uniform(-0.025, 0.025)), vy=float(rng2.uniform(-0.005, 0.005)),
+                    life=life, max_life=life, peak=float(rng2.uniform(40, 120)))
+
+    motes = [new_mote() for _ in range(N)]
+    TOTAL = FPS * 110
+    for _ in range(TOTAL):
+        buf *= 0.984
+        nxt = []
+        for m in motes:
+            m["life"] -= 1
+            if m["life"] <= 0:
+                nxt.append(new_mote())
+                continue
+            m["x"] = (m["x"] + m["vx"]) % GW
+            m["y"] = float(np.clip(m["y"] + m["vy"], 0, GH - 1))
+            t   = 1.0 - m["life"] / m["max_life"]
+            env = min(t / 0.2, 1.0, (1.0 - t) / 0.2)
+            xi  = int(round(m["x"])) % GW
+            yi  = int(np.clip(round(m["y"]), 0, GH - 1))
+            buf[yi, xi] = min(255.0, buf[yi, xi] + m["peak"] * env)
+            nxt.append(m)
+        motes = nxt
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 82 – SMOKE TENDRILS  (8 vertical Gaussian wisps meandering in x, breathing)
+def make_82_smoke_tendrils() -> None:
+    name = "82_smoke_tendrils.webm"
+    print(f"[82] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(8200)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    tendrils = [dict(
+        x=rng2.uniform(0, GW),
+        wander_amp=rng2.uniform(20, 60),
+        wander_period=rng2.uniform(FPS * 15, FPS * 35),
+        sigma_x=rng2.uniform(6, 18),
+        sigma_y=rng2.uniform(1.5, 3.5),
+        y_ctr=rng2.uniform(0.5, GH - 1.5),
+        peak=rng2.uniform(70, 140),
+        breath_period=rng2.uniform(FPS * 12, FPS * 25),
+        breath_phase=rng2.uniform(0, 2 * math.pi),
+    ) for _ in range(8)]
+    TOTAL = FPS * 100
+    for f in range(TOTAL):
+        canvas = np.full((GH, GW), 5.0, dtype=np.float32)
+        for td in tendrils:
+            x_ctr = (td["x"] + td["wander_amp"] * math.sin(2 * math.pi * f / td["wander_period"])) % GW
+            breath = 0.5 + 0.5 * math.sin(2 * math.pi * f / td["breath_period"] + td["breath_phase"])
+            peak   = td["peak"] * (0.3 + 0.7 * breath)
+            dx = xs - x_ctr
+            dx = np.where(dx > GW / 2, dx - GW, np.where(dx < -GW / 2, dx + GW, dx))
+            gx = np.exp(-0.5 * (dx / td["sigma_x"]) ** 2)
+            gy = np.exp(-0.5 * ((ys - td["y_ctr"]) / td["sigma_y"]) ** 2)
+            canvas += peak * np.outer(gy, gx)
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 83 – POLLEN CLOUD  (200 brownian particles, very dim, fills all 9 rows)
+def make_83_pollen_cloud() -> None:
+    name = "83_pollen_cloud.webm"
+    print(f"[83] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(8300)
+    N    = 200
+    STEP = 0.012
+    px       = rng2.uniform(0, GW, N)
+    py       = rng2.uniform(0, GH - 1, N)
+    pk       = rng2.uniform(12, 45, N)
+    life     = rng2.integers(120, 360, N).astype(float)
+    max_life = life.copy()
+    TOTAL = FPS * 120
+    for _ in range(TOTAL):
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        px = (px + rng2.uniform(-STEP, STEP, N)) % GW
+        py = np.clip(py + rng2.uniform(-STEP * 0.3, STEP * 0.3, N), 0, GH - 1)
+        life -= 1
+        dead = life <= 0
+        if dead.any():
+            px[dead]       = rng2.uniform(0, GW, dead.sum())
+            py[dead]       = rng2.uniform(0, GH - 1, dead.sum())
+            max_life[dead] = rng2.integers(120, 360, dead.sum())
+            life[dead]     = max_life[dead]
+            pk[dead]       = rng2.uniform(12, 45, dead.sum())
+        t   = 1.0 - life / max_life
+        env = np.minimum(np.minimum(t / 0.15, (1.0 - t) / 0.15), 1.0)
+        xi  = np.round(px).astype(int) % GW
+        yi  = np.clip(np.round(py).astype(int), 0, GH - 1)
+        np.add.at(canvas, (yi, xi), pk * env)
+        np.clip(canvas, 0, 255, out=canvas)
+        write_frame(w, canvas)
+    close(w, name)
+
+
+# 84 – BREATH MOTES  (Gaussian spot appears, slowly expands, then fades)
+def make_84_breath_motes() -> None:
+    name = "84_breath_motes.webm"
+    print(f"[84] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(8400)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    blooms: list[dict] = []
+    SPAWN_PROB = 0.018
+    TOTAL = FPS * 100
+    for _ in range(TOTAL):
+        canvas = np.full((GH, GW), 4.0, dtype=np.float32)
+        if rng2.random() < SPAWN_PROB:
+            ls = int(rng2.integers(120, 300))
+            blooms.append(dict(cx=float(rng2.integers(20, GW - 20)),
+                               cy=float(rng2.uniform(0.5, GH - 1.5)),
+                               life=ls, max_life=ls,
+                               sx_max=float(rng2.uniform(30, 90)),
+                               sy_max=float(rng2.uniform(1.5, 3.5)),
+                               peak=float(rng2.uniform(55, 115))))
+        alive = []
+        for b in blooms:
+            b["life"] -= 1
+            if b["life"] <= 0:
+                continue
+            t   = 1.0 - b["life"] / b["max_life"]
+            sx  = max(b["sx_max"] * t, 0.5)
+            sy  = max(b["sy_max"] * t, 0.3)
+            env = min(t / 0.2, 1.0, (1.0 - t) / 0.2)
+            dx  = xs - b["cx"]
+            dx  = np.where(dx > GW / 2, dx - GW, np.where(dx < -GW / 2, dx + GW, dx))
+            canvas += b["peak"] * env * np.outer(
+                np.exp(-0.5 * ((ys - b["cy"]) / sy) ** 2),
+                np.exp(-0.5 * (dx / sx) ** 2))
+            alive.append(b)
+        blooms = alive
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 85 – DUST SETTLE  (60 particles spawn at top, settle very slowly downward)
+def make_85_dust_settle() -> None:
+    name = "85_dust_settle.webm"
+    print(f"[85] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(8500)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    N    = 60
+
+    def new_dust(stagger=False):
+        return dict(x=float(rng2.integers(0, GW)),
+                    y=float(rng2.uniform(0, GH - 1)) if stagger else 0.0,
+                    vy=float(rng2.uniform(0.003, 0.015)),
+                    vx=float(rng2.uniform(-0.008, 0.008)),
+                    peak=float(rng2.uniform(30, 80)))
+
+    parts = [new_dust(stagger=True) for _ in range(N)]
+    TOTAL = FPS * 110
+    for _ in range(TOTAL):
+        buf *= 0.986
+        for p in parts:
+            p["y"] += p["vy"]
+            p["x"]  = (p["x"] + p["vx"]) % GW
+            if p["y"] >= GH - 1:
+                p.update(new_dust())
+                continue
+            xi = int(round(p["x"])) % GW
+            yi = int(np.clip(round(p["y"]), 0, GH - 1))
+            buf[yi, xi] = min(255.0, buf[yi, xi] + p["peak"])
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 86 – CANDLE SMOKE  (Gaussian plume rises + widens from slow wandering emitter)
+def make_86_candle_smoke() -> None:
+    name = "86_candle_smoke.webm"
+    print(f"[86] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(8600)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    segs: list[dict] = []
+    SPAWN_EVERY = 8
+    TOTAL = FPS * 100
+    for f in range(TOTAL):
+        canvas = np.full((GH, GW), 4.0, dtype=np.float32)
+        em_x = GW / 2 + 40 * math.sin(f * 0.012)
+        if f % SPAWN_EVERY == 0:
+            segs.append(dict(cx=em_x, cy=float(GH - 1), age=0,
+                             max_age=int(rng2.integers(150, 240)),
+                             sx0=float(rng2.uniform(5, 12)),
+                             vx=float(rng2.uniform(-0.03, 0.03)),
+                             peak=float(rng2.uniform(80, 140)),
+                             phase=float(rng2.uniform(0, 2 * math.pi))))
+        alive = []
+        for s in segs:
+            s["age"] += 1
+            if s["age"] > s["max_age"]:
+                continue
+            s["cy"] -= 0.018
+            s["cx"]  = (s["cx"] + s["vx"] + 0.04 * math.sin(s["age"] * 0.08 + s["phase"])) % GW
+            if s["cy"] < 0:
+                continue
+            t   = s["age"] / s["max_age"]
+            sx  = s["sx0"] * (1 + t * 2)
+            sy  = 0.6 + t * 1.8
+            env = min(t / 0.1, 1.0, (1.0 - t) / 0.15)
+            dx  = xs - s["cx"]
+            dx  = np.where(dx > GW / 2, dx - GW, np.where(dx < -GW / 2, dx + GW, dx))
+            canvas += s["peak"] * env * np.outer(
+                np.exp(-0.5 * ((ys - s["cy"]) / max(sy, 0.3)) ** 2),
+                np.exp(-0.5 * (dx / max(sx, 0.5)) ** 2))
+            alive.append(s)
+        segs = alive
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 87 – FOG DRIFT  (4 horizontal fog bands with slow y-drift + horizontal modulation)
+def make_87_fog_drift() -> None:
+    name = "87_fog_drift.webm"
+    print(f"[87] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(8700)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    bands = [dict(
+        y=rng2.uniform(0.5, GH - 1.5), dy=rng2.uniform(-0.0008, 0.0008),
+        sy=rng2.uniform(1.5, 3.5), period=rng2.uniform(FPS * 25, FPS * 50),
+        bphase=rng2.uniform(0, 2 * math.pi), peak=rng2.uniform(45, 90),
+        hk=rng2.uniform(0.003, 0.010), hp=rng2.uniform(0, 2 * math.pi),
+        hd=rng2.uniform(0.0003, 0.0012), ha=rng2.uniform(0.15, 0.40),
+    ) for _ in range(4)]
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        canvas = np.full((GH, GW), 8.0, dtype=np.float32)
+        for b in bands:
+            b["y"] = float(np.clip(b["y"] + b["dy"], 0.3, GH - 1.3))
+            if b["y"] <= 0.3 or b["y"] >= GH - 1.3:
+                b["dy"] *= -1
+            b["hp"] += b["hd"]
+            breath = 0.5 + 0.5 * math.sin(2 * math.pi * f / b["period"] + b["bphase"])
+            h_env  = 1.0 - b["ha"] * (0.5 + 0.5 * np.sin(b["hk"] * xs + b["hp"]))
+            gy     = np.exp(-0.5 * ((ys - b["y"]) / b["sy"]) ** 2)
+            canvas += b["peak"] * (0.3 + 0.7 * breath) * np.outer(gy, h_env)
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 88 – NEBULA FLOAT  (5 large soft Gaussian blobs drifting very slowly)
+def make_88_nebula_float() -> None:
+    name = "88_nebula_float.webm"
+    print(f"[88] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(8800)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    blobs = [dict(
+        x=rng2.uniform(0, GW), y=rng2.uniform(0.5, GH - 1.5),
+        vx=rng2.uniform(-0.012, 0.012), vy=rng2.uniform(-0.003, 0.003),
+        sx=rng2.uniform(55, 110), sy=rng2.uniform(2.0, 4.0),
+        peak=rng2.uniform(50, 95),
+        bp=rng2.uniform(FPS * 20, FPS * 40), bph=rng2.uniform(0, 2 * math.pi),
+    ) for _ in range(5)]
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        canvas = np.full((GH, GW), 6.0, dtype=np.float32)
+        for b in blobs:
+            b["x"] = (b["x"] + b["vx"]) % GW
+            b["y"] = float(np.clip(b["y"] + b["vy"], 0.3, GH - 1.3))
+            if b["y"] <= 0.3 or b["y"] >= GH - 1.3:
+                b["vy"] *= -1
+            breath = 0.5 + 0.5 * math.sin(2 * math.pi * f / b["bp"] + b["bph"])
+            dx = xs - b["x"]
+            dx = np.where(dx > GW / 2, dx - GW, np.where(dx < -GW / 2, dx + GW, dx))
+            canvas += b["peak"] * (0.25 + 0.75 * breath) * np.outer(
+                np.exp(-0.5 * ((ys - b["y"]) / b["sy"]) ** 2),
+                np.exp(-0.5 * (dx / b["sx"]) ** 2))
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 89 – INCENSE CURL  (sinusoidal smoke ribbon rises from slow wandering emitter)
+def make_89_incense_curl() -> None:
+    name = "89_incense_curl.webm"
+    print(f"[89] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(8900)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    pts: list[dict] = []
+    SPAWN_EVERY = 3
+    TOTAL = FPS * 100
+    for f in range(TOTAL):
+        buf *= 0.975
+        em_x = GW / 2 + 35 * math.sin(f * 0.009)
+        if f % SPAWN_EVERY == 0:
+            pts.append(dict(x=em_x, y=float(GH - 1), age=0,
+                            phase=float(rng2.uniform(0, 2 * math.pi))))
+        alive = []
+        for p in pts:
+            p["age"] += 1
+            p["y"]  -= 0.015
+            p["x"]  += 0.06 * math.sin(p["age"] * 0.1 + p["phase"])
+            p["x"]   = p["x"] % GW
+            if p["y"] < 0 or p["age"] > 300:
+                continue
+            fade   = (1.0 - p["age"] / 300) * max(0.0, min(1.0, p["y"] / 1.5))
+            xi = int(round(p["x"])) % GW
+            yi = int(np.clip(round(p["y"]), 0, GH - 1))
+            buf[yi, xi] = min(255.0, buf[yi, xi] + 80 * fade)
+            alive.append(p)
+        pts = alive
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 90 – GENTLE SNOW  (40 flakes fall very slowly, slight left/right wobble)
+def make_90_gentle_snow() -> None:
+    name = "90_gentle_snow.webm"
+    print(f"[90] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(9000)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    N    = 40
+
+    def new_flake(stagger=False):
+        return dict(x=float(rng2.integers(0, GW)),
+                    y=float(rng2.uniform(0, GH - 1)) if stagger else 0.0,
+                    vy=float(rng2.uniform(0.004, 0.018)),
+                    vx=float(rng2.uniform(-0.006, 0.006)),
+                    peak=float(rng2.uniform(60, 140)),
+                    wamp=float(rng2.uniform(0.002, 0.012)),
+                    wph=float(rng2.uniform(0, 2 * math.pi)))
+
+    flakes = [new_flake(stagger=True) for _ in range(N)]
+    TOTAL = FPS * 110
+    for f in range(TOTAL):
+        buf *= 0.985
+        for fl in flakes:
+            fl["y"] += fl["vy"]
+            fl["x"]  = (fl["x"] + fl["vx"] + fl["wamp"] * math.sin(f * 0.08 + fl["wph"])) % GW
+            if fl["y"] >= GH - 1:
+                fl.update(new_flake())
+                continue
+            bright = fl["peak"] * min(1.0, fl["y"] / 0.5, (GH - 1 - fl["y"]) / 0.5)
+            xi = int(round(fl["x"])) % GW
+            yi = int(np.clip(round(fl["y"]), 0, GH - 1))
+            buf[yi, xi] = min(255.0, buf[yi, xi] + bright)
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 91 – DEEP FLOAT  (60 dim random-walk particles, rare flash pulses)
+def make_91_deep_float() -> None:
+    name = "91_deep_float.webm"
+    print(f"[91] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(9100)
+    N    = 60
+    STEP = 0.008
+    px   = rng2.uniform(0, GW, N)
+    py   = rng2.uniform(0, GH - 1, N)
+    pk   = rng2.uniform(15, 35, N)
+    TOTAL = FPS * 120
+    for _ in range(TOTAL):
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        px = (px + rng2.uniform(-STEP, STEP, N)) % GW
+        py = np.clip(py + rng2.uniform(-STEP * 0.4, STEP * 0.4, N), 0, GH - 1)
+        bright = pk.copy()
+        pulses = rng2.random(N) < 0.003
+        if pulses.any():
+            bright[pulses] = rng2.uniform(120, 200, pulses.sum())
+        xi = np.round(px).astype(int) % GW
+        yi = np.clip(np.round(py).astype(int), 0, GH - 1)
+        np.add.at(canvas, (yi, xi), bright)
+        np.clip(canvas, 0, 255, out=canvas)
+        write_frame(w, canvas)
+    close(w, name)
+
+
+# 92 – ASH SETTLE  (50 particles drift right + slowly down, wind-swept)
+def make_92_ash_settle() -> None:
+    name = "92_ash_settle.webm"
+    print(f"[92] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(9200)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    N    = 50
+
+    def new_ash(stagger=False):
+        return dict(x=float(rng2.integers(0, GW)),
+                    y=float(rng2.uniform(0, GH - 1)) if stagger else 0.0,
+                    vy=float(rng2.uniform(0.002, 0.010)),
+                    vx=float(rng2.uniform(0.010, 0.040)),
+                    peak=float(rng2.uniform(25, 70)),
+                    wob=float(rng2.uniform(0.003, 0.015)),
+                    wph=float(rng2.uniform(0, 2 * math.pi)))
+
+    ashes = [new_ash(stagger=True) for _ in range(N)]
+    TOTAL = FPS * 110
+    for f in range(TOTAL):
+        buf *= 0.984
+        for a in ashes:
+            a["x"] = (a["x"] + a["vx"] + a["wob"] * math.sin(f * 0.06 + a["wph"])) % GW
+            a["y"] = float(np.clip(a["y"] + a["vy"], 0, GH - 1))
+            if a["y"] >= GH - 1:
+                a.update(new_ash())
+                continue
+            xi = int(round(a["x"])) % GW
+            yi = int(np.clip(round(a["y"]), 0, GH - 1))
+            buf[yi, xi] = min(255.0, buf[yi, xi] + a["peak"])
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 93 – CORONA DRIFT  (40 particles orbit a slowly wandering center point)
+def make_93_corona_drift() -> None:
+    name = "93_corona_drift.webm"
+    print(f"[93] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(9300)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    N    = 40
+    angles = rng2.uniform(0, 2 * math.pi, N)
+    radii  = rng2.uniform(2, 25, N)
+    omegas = rng2.uniform(0.003, 0.012, N) * rng2.choice([-1, 1], N)
+    peaks  = rng2.uniform(30, 90, N)
+    cxph   = float(rng2.uniform(0, 2 * math.pi))
+    cyph   = float(rng2.uniform(0, 2 * math.pi))
+    TOTAL  = FPS * 110
+    for f in range(TOTAL):
+        buf *= 0.982
+        cx = GW / 2 + GW * 0.30 * math.sin(f * 0.005 + cxph)
+        cy = (GH - 1) / 2 + (GH - 1) * 0.35 * math.sin(f * 0.007 + cyph)
+        angles += omegas
+        px_f = cx + radii * np.cos(angles)
+        py_f = cy + radii * np.sin(angles) * 0.15   # flatten to grid aspect ratio
+        xi = np.round(px_f).astype(int) % GW
+        yi = np.clip(np.round(py_f).astype(int), 0, GH - 1)
+        np.add.at(buf, (yi, xi), peaks)
+        np.clip(buf, 0, 255, out=buf)
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 94 – SPIRIT LIGHTS  (8 dim lights slowly wandering, fading in/out over 10–20 s)
+def make_94_spirit_lights() -> None:
+    name = "94_spirit_lights.webm"
+    print(f"[94] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(9400)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    N    = 8
+    lights = [dict(
+        x0=rng2.uniform(0, GW), amp_x=rng2.uniform(40, 150), amp_y=rng2.uniform(1.5, 3.5),
+        fx=rng2.uniform(0.002, 0.006), fy=rng2.uniform(0.001, 0.004),
+        px=rng2.uniform(0, 2 * math.pi), py=rng2.uniform(0, 2 * math.pi),
+        fade_period=rng2.uniform(FPS * 10, FPS * 20),
+        fade_phase=rng2.uniform(0, 2 * math.pi),
+        peak=rng2.uniform(80, 150),
+    ) for _ in range(N)]
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        buf *= 0.985
+        for li in lights:
+            lx = (li["x0"] + li["amp_x"] * math.sin(li["fx"] * f + li["px"])) % GW
+            ly = (GH - 1) / 2 + li["amp_y"] * math.sin(li["fy"] * f + li["py"])
+            fade   = 0.5 + 0.5 * math.sin(2 * math.pi * f / li["fade_period"] + li["fade_phase"])
+            bright = li["peak"] * fade
+            xi = int(round(lx)) % GW
+            yi = int(np.clip(round(ly), 0, GH - 1))
+            buf[yi, xi] = min(255.0, buf[yi, xi] + bright)
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 95 – HEAT SHIMMER  (6 layers of oscillating vertical brightness bands)
+def make_95_heat_shimmer() -> None:
+    name = "95_heat_shimmer.webm"
+    print(f"[95] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(9500)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    layers = [dict(
+        k=rng2.uniform(0.005, 0.025), phase=rng2.uniform(0, 2 * math.pi),
+        drift=rng2.uniform(0.001, 0.005), amp=rng2.uniform(20, 50),
+        ys=rng2.uniform(1.0, 4.0), yc=rng2.uniform(0.5, GH - 1.5),
+        bp=rng2.uniform(FPS * 15, FPS * 35), bph=rng2.uniform(0, 2 * math.pi),
+    ) for _ in range(6)]
+    TOTAL = FPS * 110
+    for f in range(TOTAL):
+        canvas = np.full((GH, GW), 10.0, dtype=np.float32)
+        for la in layers:
+            la["phase"] += la["drift"]
+            wave   = 0.5 + 0.5 * np.sin(la["k"] * xs + la["phase"])
+            gy     = np.exp(-0.5 * ((ys - la["yc"]) / la["ys"]) ** 2)
+            breath = 0.5 + 0.5 * math.sin(2 * math.pi * f / la["bp"] + la["bph"])
+            canvas += la["amp"] * breath * np.outer(gy, wave)
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 96 – DUST VORTEX  (50 particles in slow spiral around slowly drifting center)
+def make_96_dust_vortex() -> None:
+    name = "96_dust_vortex.webm"
+    print(f"[96] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(9600)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    N    = 50
+    angles  = rng2.uniform(0, 2 * math.pi, N)
+    radii   = rng2.uniform(0.5, 40.0, N)
+    r_drift = rng2.uniform(-0.005, 0.005, N)
+    omegas  = rng2.uniform(0.003, 0.012, N) * rng2.choice([-1, 1], N)
+    peaks   = rng2.uniform(25, 80, N)
+    cxph    = float(rng2.uniform(0, 2 * math.pi))
+    cyph    = float(rng2.uniform(0, 2 * math.pi))
+    TOTAL   = FPS * 110
+    for f in range(TOTAL):
+        buf *= 0.984
+        cx = GW / 2 + GW * 0.25 * math.sin(f * 0.004 + cxph)
+        cy = (GH - 1) / 2 + (GH - 1) * 0.3 * math.sin(f * 0.006 + cyph)
+        angles += omegas
+        radii   = np.clip(radii + r_drift, 0.5, 60.0)
+        r_drift[radii >= 60.0] *= -1
+        r_drift[radii <= 0.5]  *= -1
+        px_f = cx + radii * np.cos(angles)
+        py_f = cy + radii * np.sin(angles) * 0.15
+        xi = np.round(px_f).astype(int) % GW
+        yi = np.clip(np.round(py_f).astype(int), 0, GH - 1)
+        np.add.at(buf, (yi, xi), peaks)
+        np.clip(buf, 0, 255, out=buf)
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 97 – VOID BLOOM  (dark field, rare dim expanding ring-blooms)
+def make_97_void_bloom() -> None:
+    name = "97_void_bloom.webm"
+    print(f"[97] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(9700)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    blooms: list[dict] = []
+    SPAWN_PROB = 0.010
+    TOTAL = FPS * 110
+    for _ in range(TOTAL):
+        canvas = np.full((GH, GW), 3.0, dtype=np.float32)
+        if rng2.random() < SPAWN_PROB:
+            ls = int(rng2.integers(180, 360))
+            blooms.append(dict(cx=float(rng2.integers(0, GW)),
+                               cy=float(rng2.uniform(0, GH - 1)),
+                               life=ls, max_life=ls,
+                               max_r=float(rng2.uniform(20, 80)),
+                               sig=float(rng2.uniform(2.0, 5.0)),
+                               peak=float(rng2.uniform(40, 100))))
+        alive = []
+        for b in blooms:
+            b["life"] -= 1
+            if b["life"] <= 0:
+                continue
+            t   = 1.0 - b["life"] / b["max_life"]
+            r   = b["max_r"] * t
+            env = min(t / 0.15, 1.0, (1.0 - t) / 0.25)
+            if r > 0.5:
+                dist = np.sqrt(((xs - b["cx"]) ** 2)[None, :] + ((ys - b["cy"]) ** 2)[:, None])
+                canvas += b["peak"] * env * np.exp(-0.5 * ((dist - r) / b["sig"]) ** 2)
+            alive.append(b)
+        blooms = alive
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 98 – SUSPENSION  (100 particles oscillating gently around fixed home positions)
+def make_98_suspension() -> None:
+    name = "98_suspension.webm"
+    print(f"[98] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(9800)
+    N    = 100
+    hx    = rng2.uniform(0, GW, N)
+    hy    = rng2.uniform(0, GH - 1, N)
+    ox_a  = rng2.uniform(0.5, 4.0, N)
+    oy_a  = rng2.uniform(0.1, 1.2, N)
+    ox_f  = rng2.uniform(0.008, 0.025, N)
+    oy_f  = rng2.uniform(0.004, 0.015, N)
+    ox_ph = rng2.uniform(0, 2 * math.pi, N)
+    oy_ph = rng2.uniform(0, 2 * math.pi, N)
+    peaks = rng2.uniform(18, 55, N)
+    fp    = rng2.uniform(0, 2 * math.pi, N)
+    fper  = rng2.uniform(FPS * 8, FPS * 20, N)
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        px_f = (hx + ox_a * np.sin(ox_f * f + ox_ph)) % GW
+        py_f = np.clip(hy + oy_a * np.sin(oy_f * f + oy_ph), 0, GH - 1)
+        fade = 0.5 + 0.5 * np.sin(2 * math.pi * f / fper + fp)
+        xi   = np.round(px_f).astype(int) % GW
+        yi   = np.clip(np.round(py_f).astype(int), 0, GH - 1)
+        np.add.at(canvas, (yi, xi), peaks * fade)
+        np.clip(canvas, 0, 255, out=canvas)
+        write_frame(w, canvas)
+    close(w, name)
+
+
+# 99 – SLOW MEMBRANE  (4 full-width sine waves, ultra-slow drift + amplitude modulation)
+def make_99_slow_membrane() -> None:
+    name = "99_slow_membrane.webm"
+    print(f"[99] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(9900)
+    xs   = np.arange(GW, dtype=np.float32)
+    ys   = np.arange(GH, dtype=np.float32)
+    waves = [dict(
+        k=rng2.uniform(0.004, 0.020), phase=rng2.uniform(0, 2 * math.pi),
+        drift=rng2.uniform(0.0003, 0.0015),
+        yc=rng2.uniform(0.5, GH - 1.5), ys=rng2.uniform(1.0, 4.0),
+        ap=rng2.uniform(FPS * 30, FPS * 60), aph=rng2.uniform(0, 2 * math.pi),
+        pk_max=rng2.uniform(90, 150), pk_min=rng2.uniform(5, 20),
+    ) for _ in range(4)]
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        for wv in waves:
+            wv["phase"] += wv["drift"]
+            wave = 0.5 + 0.5 * np.sin(wv["k"] * xs + wv["phase"])
+            gy   = np.exp(-0.5 * ((ys - wv["yc"]) / wv["ys"]) ** 2)
+            amp  = 0.5 + 0.5 * math.sin(2 * math.pi * f / wv["ap"] + wv["aph"])
+            peak = wv["pk_min"] + (wv["pk_max"] - wv["pk_min"]) * amp
+            canvas += peak * np.outer(gy, wave)
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 100 – STARFIELD DRIFT  (3 parallax layers of dim slowly drifting pixels)
+def make_100_starfield_drift() -> None:
+    name = "100_starfield_drift.webm"
+    print(f"[100] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(10000)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+    LAYERS = [
+        dict(n=50,  speed=0.005, pk=20),   # far, very dim, very slow
+        dict(n=35,  speed=0.018, pk=40),   # mid
+        dict(n=20,  speed=0.045, pk=70),   # near, fastest (still slow)
+    ]
+    px_l, py_l, sp_l, pk_l, fp_l, fper_l = [], [], [], [], [], []
+    for lay in LAYERS:
+        for _ in range(lay["n"]):
+            px_l.append(rng2.uniform(0, GW))
+            py_l.append(rng2.uniform(0, GH - 1))
+            sp_l.append(lay["speed"] * rng2.uniform(0.8, 1.2))
+            pk_l.append(lay["pk"] * rng2.uniform(0.7, 1.3))
+            fp_l.append(rng2.uniform(0, 2 * math.pi))
+            fper_l.append(rng2.uniform(FPS * 5, FPS * 18))
+    px   = np.array(px_l,   dtype=np.float32)
+    py   = np.array(py_l,   dtype=np.float32)
+    spd  = np.array(sp_l,   dtype=np.float32)
+    pkv  = np.array(pk_l,   dtype=np.float32)
+    fph  = np.array(fp_l,   dtype=np.float32)
+    fper = np.array(fper_l, dtype=np.float32)
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        buf *= 0.986
+        px   = (px + spd) % GW
+        fade = 0.5 + 0.5 * np.sin(2 * math.pi * f / fper + fph)
+        xi   = np.round(px).astype(int) % GW
+        yi   = np.clip(np.round(py).astype(int), 0, GH - 1)
+        np.add.at(buf, (yi, xi), pkv * fade)
+        np.clip(buf, 0, 255, out=buf)
+        write_frame(w, buf)
+    close(w, name)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DEPTH-TRAVEL ATMOSPHERE PATTERNS  (101 – 110)
+# All motion is primarily along the Y axis (9 rows = front → back depth).
+# Brightness envelopes: long organic periods, spending time near 0,
+# then rising slowly to mid or max, then falling back — never abrupt.
+# X dimension: mild slow horizontal texture to prevent flat stripes.
+# Beating envelope formula used throughout:
+#   env = (sin(2π*f/T1) * 0.5 + 0.5) * (sin(2π*f/T2) * 0.5 + 0.5)
+# → each factor dips to 0 on its own period; product stays near 0 longer,
+#   rises to peak 1.0 only when both align, creating organic morphing.
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+# 101 – DEPTH FOG ROLL
+# A single Gaussian brightness front (sigma_y ≈ 2.1 rows) drifts slowly
+# from Y=0 (front) to Y=8 (back) and returns over 28 s.
+# Amplitude is modulated by a product of two sines with irrational-ratio
+# periods (19 s × 31 s) → spends most time dim, occasionally blooms bright.
+
+def make_101_depth_fog_roll() -> None:
+    name = "101_depth_fog_roll.webm"
+    print(f"[101] {name} …")
+    w       = open_writer(name)
+    ys      = np.arange(GH, dtype=np.float32)
+    xs      = np.arange(GW, dtype=np.float32)
+    T_TRAVEL = FPS * 28
+    T_BEAT1  = FPS * 19
+    T_BEAT2  = FPS * 31
+    SIGMA_Y  = 2.1
+    PEAK     = 125.0
+    x_ph     = 0.0
+    TOTAL    = FPS * 120
+    for f in range(TOTAL):
+        x_ph  += 0.0015
+        y_ctr  = (GH - 1) * 0.5 * (1.0 - math.cos(2 * math.pi * f / T_TRAVEL))
+        env    = (math.sin(2 * math.pi * f / T_BEAT1) * 0.5 + 0.5) * \
+                 (math.sin(2 * math.pi * f / T_BEAT2) * 0.5 + 0.5)
+        peak   = PEAK * env
+        gy     = np.exp(-0.5 * ((ys - y_ctr) / SIGMA_Y) ** 2)
+        x_env  = 0.80 + 0.20 * np.sin(0.006 * xs + x_ph)
+        write_frame(w, np.clip(peak * np.outer(gy, x_env), 0, 255))
+    close(w, name)
+
+
+# 102 – DEPTH ROW BREATH
+# Each of the 9 rows breathes with its own beating envelope (two periods
+# T1 and T2, both 15–55 s, randomly assigned per row).  When rows peak at
+# staggered moments the brightness visibly rolls from front to back.
+
+def make_102_depth_row_breath() -> None:
+    name = "102_depth_row_breath.webm"
+    print(f"[102] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(10200)
+    xs   = np.arange(GW, dtype=np.float32)
+    T1   = rng2.uniform(FPS * 15, FPS * 35, GH)
+    T2   = rng2.uniform(FPS * 22, FPS * 55, GH)
+    ph1  = rng2.uniform(0, 2 * math.pi, GH)
+    ph2  = rng2.uniform(0, 2 * math.pi, GH)
+    peaks = rng2.uniform(70, 140, GH)
+    x_ph = 0.0
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        x_ph  += 0.0012
+        env   = (np.sin(2 * math.pi * f / T1 + ph1) * 0.5 + 0.5) * \
+                (np.sin(2 * math.pi * f / T2 + ph2) * 0.5 + 0.5)
+        row_b = (peaks * env).astype(np.float32)
+        x_env = 0.85 + 0.15 * np.sin(0.005 * xs + x_ph)
+        write_frame(w, np.clip(np.outer(row_b, x_env), 0, 255))
+    close(w, name)
+
+
+# 103 – DEPTH TIDE SWELL
+# A sigmoid brightness "waterline" rises from below Y=0 to above Y=8 and
+# recedes (25 s cycle).  Rows below the line are bright, above are dark.
+# Amplitude breathes separately on a 37 s period → tide fades in/out.
+
+def make_103_depth_tide_swell() -> None:
+    name = "103_depth_tide_swell.webm"
+    print(f"[103] {name} …")
+    w         = open_writer(name)
+    ys        = np.arange(GH, dtype=np.float32)
+    xs        = np.arange(GW, dtype=np.float32)
+    T_TIDE    = FPS * 25
+    T_BREATH  = FPS * 37
+    SHARPNESS = 4.0
+    PEAK      = 105.0
+    x_ph      = 0.0
+    TOTAL     = FPS * 120
+    for f in range(TOTAL):
+        x_ph    += 0.0010
+        waterline = (GH + 3) * 0.5 * (1.0 - math.cos(2 * math.pi * f / T_TIDE)) - 2.0
+        front     = 1.0 / (1.0 + np.exp(-np.clip((waterline - ys) * SHARPNESS, -80, 80)))
+        breath    = 0.5 + 0.5 * math.sin(2 * math.pi * f / T_BREATH)
+        x_env     = 0.82 + 0.18 * np.sin(0.008 * xs + x_ph)
+        write_frame(w, np.clip(PEAK * breath * np.outer(front, x_env), 0, 255))
+    close(w, name)
+
+
+# 104 – DEPTH SLOW WAVE
+# Two sinusoidal brightness waves travel through the 9-row depth axis:
+# one front→back (22 s sweep) and one back→front (35 s sweep).
+# A 45 s overall envelope takes both to near-zero and back.
+
+def make_104_depth_slow_wave() -> None:
+    name = "104_depth_slow_wave.webm"
+    print(f"[104] {name} …")
+    w    = open_writer(name)
+    ys   = np.arange(GH, dtype=np.float32)
+    xs   = np.arange(GW, dtype=np.float32)
+    PHASE_STEP = 2 * math.pi / (GH - 1)   # full 2π across 8 rows
+    T_WAVE1    = FPS * 22
+    T_WAVE2    = FPS * 35
+    AMP1       = 70.0
+    AMP2       = 45.0
+    T_ENV      = FPS * 45
+    x_ph       = 0.0
+    TOTAL      = FPS * 120
+    for f in range(TOTAL):
+        x_ph   += 0.0014
+        env     = 0.5 + 0.5 * math.sin(2 * math.pi * f / T_ENV)
+        wave1   = AMP1 * np.sin(2 * math.pi * f / T_WAVE1 + ys * PHASE_STEP) ** 2
+        wave2   = AMP2 * np.sin(2 * math.pi * f / T_WAVE2 - ys * PHASE_STEP) ** 2
+        row_b   = (env * (wave1 + wave2)).astype(np.float32)
+        x_env   = 0.82 + 0.18 * np.sin(0.006 * xs + x_ph)
+        write_frame(w, np.clip(np.outer(row_b, x_env), 0, 255))
+    close(w, name)
+
+
+# 105 – DEPTH AURORA BANDS
+# Three narrow Gaussian brightness bands (sigma_y 0.8–1.8) drift slowly in Y
+# at different speeds.  Each band has its own two-period beating envelope,
+# so each appears and fades independently.
+
+def make_105_depth_aurora_bands() -> None:
+    name = "105_depth_aurora_bands.webm"
+    print(f"[105] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(10500)
+    ys   = np.arange(GH, dtype=np.float32)
+    xs   = np.arange(GW, dtype=np.float32)
+    bands = [dict(
+        y=rng2.uniform(1.0, GH - 2.0),
+        vy=rng2.choice([-1, 1]) * rng2.uniform(0.0015, 0.0045),
+        sigma=rng2.uniform(0.8, 1.8),
+        T1=rng2.uniform(FPS * 14, FPS * 28),
+        T2=rng2.uniform(FPS * 22, FPS * 45),
+        ph1=rng2.uniform(0, 2 * math.pi),
+        ph2=rng2.uniform(0, 2 * math.pi),
+        peak=rng2.uniform(95, 150),
+        T_x=rng2.uniform(FPS * 20, FPS * 40),
+        ph_x=rng2.uniform(0, 2 * math.pi),
+    ) for _ in range(3)]
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        canvas = np.full((GH, GW), 5.0, dtype=np.float32)
+        for b in bands:
+            b["y"] += b["vy"]
+            if b["y"] < 0.2 or b["y"] > GH - 1.2:
+                b["vy"] *= -1
+                b["y"]   = float(np.clip(b["y"], 0.2, GH - 1.2))
+            env   = (math.sin(2 * math.pi * f / b["T1"] + b["ph1"]) * 0.5 + 0.5) * \
+                    (math.sin(2 * math.pi * f / b["T2"] + b["ph2"]) * 0.5 + 0.5)
+            gy    = np.exp(-0.5 * ((ys - b["y"]) / b["sigma"]) ** 2)
+            x_env = 0.78 + 0.22 * np.sin(0.007 * xs + b["ph_x"] + 2 * math.pi * f / b["T_x"])
+            canvas += b["peak"] * env * np.outer(gy, x_env)
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 106 – DEPTH LAYER BLOOM
+# Random rows bloom one at a time: brightness rises with a raised-cosine
+# (sin² π*t) envelope over 8–20 s, then falls back to near zero.
+# Multiple blooms coexist at different depths.
+
+def make_106_depth_layer_bloom() -> None:
+    name = "106_depth_layer_bloom.webm"
+    print(f"[106] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(10600)
+    ys_a = np.arange(GH, dtype=np.float32)
+    xs   = np.arange(GW, dtype=np.float32)
+    blooms: list[dict] = []
+    SPAWN_PROB = 0.010
+    x_ph       = 0.0
+    TOTAL      = FPS * 120
+    for _ in range(TOTAL):
+        x_ph   += 0.0013
+        canvas  = np.full((GH, GW), 4.0, dtype=np.float32)
+        if rng2.random() < SPAWN_PROB:
+            ls = int(rng2.integers(FPS * 8, FPS * 20))
+            blooms.append(dict(
+                row=int(rng2.integers(0, GH)),
+                life=ls, max_life=ls,
+                peak=rng2.uniform(85, 145),
+                sigma=rng2.uniform(0.5, 1.4),
+                x_ph0=rng2.uniform(0, 2 * math.pi),
+            ))
+        alive = []
+        for b in blooms:
+            b["life"] -= 1
+            if b["life"] <= 0:
+                continue
+            t     = 1.0 - b["life"] / b["max_life"]
+            env   = math.sin(math.pi * t) ** 2
+            gy    = np.exp(-0.5 * ((ys_a - b["row"]) / b["sigma"]) ** 2)
+            x_env = 0.80 + 0.20 * np.sin(0.008 * xs + b["x_ph0"])
+            canvas += b["peak"] * env * np.outer(gy, x_env)
+            alive.append(b)
+        blooms = alive
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 107 – DEPTH HUMP TRAVEL
+# A single Gaussian "spotlight" (sigma_y = 1.8) sweeps from Y=0 to Y=8
+# and back over 30 s, making the brightest zone travel through depth.
+# Amplitude uses a two-period beating envelope so it fades to near-zero
+# between passages, then swells back — no constant brightness.
+
+def make_107_depth_hump_travel() -> None:
+    name = "107_depth_hump_travel.webm"
+    print(f"[107] {name} …")
+    w       = open_writer(name)
+    rng2    = np.random.default_rng(10700)
+    ys      = np.arange(GH, dtype=np.float32)
+    xs      = np.arange(GW, dtype=np.float32)
+    T_TRAVEL = FPS * 30
+    T_AMP1   = FPS * 24
+    T_AMP2   = FPS * 41
+    SIGMA_Y  = 1.8
+    PEAK_MAX = 135.0
+    x_ph     = 0.0
+    TOTAL    = FPS * 120
+    for f in range(TOTAL):
+        x_ph   += 0.0013
+        y_pos   = (GH - 1) * 0.5 * (1.0 - math.cos(2 * math.pi * f / T_TRAVEL))
+        env     = (math.sin(2 * math.pi * f / T_AMP1) * 0.5 + 0.5) * \
+                  (math.sin(2 * math.pi * f / T_AMP2) * 0.5 + 0.5)
+        peak    = PEAK_MAX * env
+        gy      = np.exp(-0.5 * ((ys - y_pos) / SIGMA_Y) ** 2)
+        x_env   = 0.80 + 0.20 * np.sin(0.007 * xs + x_ph)
+        write_frame(w, np.clip(peak * np.outer(gy, x_env), 0, 255))
+    close(w, name)
+
+
+# 108 – DEPTH BREATH EXPAND
+# A Gaussian centered at Y=4 (mid-depth) breathes: sigma expands from
+# a thin band (sigma 0.4) to a full wash (sigma 4.5) and back over 22 s.
+# Peak amplitude breathes on a separate 35 s period → when narrow it may
+# be dim, when wide it may be bright: complex overlapping morphing.
+
+def make_108_depth_breath_expand() -> None:
+    name = "108_depth_breath_expand.webm"
+    print(f"[108] {name} …")
+    w    = open_writer(name)
+    ys   = np.arange(GH, dtype=np.float32)
+    xs   = np.arange(GW, dtype=np.float32)
+    T_SIGMA  = FPS * 22
+    T_AMP    = FPS * 35
+    SIGMA_MIN = 0.4
+    SIGMA_MAX = 4.5
+    PEAK_MAX  = 110.0
+    Y_CENTER  = (GH - 1) * 0.5 + 0.3
+    x_ph      = 0.0
+    TOTAL     = FPS * 120
+    for f in range(TOTAL):
+        x_ph   += 0.0011
+        sigma   = SIGMA_MIN + (SIGMA_MAX - SIGMA_MIN) * (0.5 + 0.5 * math.sin(2 * math.pi * f / T_SIGMA))
+        amp_env = 0.5 + 0.5 * math.sin(2 * math.pi * f / T_AMP - math.pi / 2)
+        peak    = PEAK_MAX * max(0.0, amp_env)
+        gy      = np.exp(-0.5 * ((ys - Y_CENTER) / max(sigma, 0.1)) ** 2)
+        x_env   = 0.82 + 0.18 * np.sin(0.007 * xs + x_ph)
+        write_frame(w, np.clip(peak * np.outer(gy, x_env), 0, 255))
+    close(w, name)
+
+
+# 109 – DEPTH VEIL LAYERS
+# Five wide Gaussian hazes (sigma_y 2.5–4.5) drift at very different
+# slow speeds through depth.  Each has its own two-period beating
+# amplitude envelope (18–55 s), so at any moment 0–5 veils are visible
+# at different depths — total scene morphs continuously.
+
+def make_109_depth_veil_layers() -> None:
+    name = "109_depth_veil_layers.webm"
+    print(f"[109] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(10900)
+    ys   = np.arange(GH, dtype=np.float32)
+    xs   = np.arange(GW, dtype=np.float32)
+    veils = [dict(
+        y=rng2.uniform(0.5, GH - 1.5),
+        vy=rng2.uniform(-0.0020, 0.0020),
+        sigma=rng2.uniform(2.5, 4.5),
+        T1=rng2.uniform(FPS * 18, FPS * 38),
+        T2=rng2.uniform(FPS * 28, FPS * 55),
+        ph1=rng2.uniform(0, 2 * math.pi),
+        ph2=rng2.uniform(0, 2 * math.pi),
+        peak=rng2.uniform(50, 95),
+        x_ph=rng2.uniform(0, 2 * math.pi),
+        x_k=rng2.uniform(0.003, 0.010),
+        x_drift=rng2.uniform(0.0005, 0.0018),
+    ) for _ in range(5)]
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        canvas = np.full((GH, GW), 6.0, dtype=np.float32)
+        for vl in veils:
+            vl["y"] += vl["vy"]
+            if vl["y"] < 0.2 or vl["y"] > GH - 1.2:
+                vl["vy"] *= -1
+                vl["y"]   = float(np.clip(vl["y"], 0.2, GH - 1.2))
+            vl["x_ph"] += vl["x_drift"]
+            env   = (math.sin(2 * math.pi * f / vl["T1"] + vl["ph1"]) * 0.5 + 0.5) * \
+                    (math.sin(2 * math.pi * f / vl["T2"] + vl["ph2"]) * 0.5 + 0.5)
+            gy    = np.exp(-0.5 * ((ys - vl["y"]) / vl["sigma"]) ** 2)
+            x_env = 0.80 + 0.20 * np.sin(vl["x_k"] * xs + vl["x_ph"])
+            canvas += vl["peak"] * env * np.outer(gy, x_env)
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# 110 – DEPTH RIPPLE PULSE
+# A brightness pulse spawns at a random Y row every 10–18 s and
+# expands outward as a 1-D ring in depth space, fading with a
+# raised-cosine (sin²) envelope as the ring radius grows past the grid.
+
+def make_110_depth_ripple_pulse() -> None:
+    name = "110_depth_ripple_pulse.webm"
+    print(f"[110] {name} …")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(11000)
+    ys   = np.arange(GH, dtype=np.float32)
+    xs   = np.arange(GW, dtype=np.float32)
+    pulses: list[dict] = []
+    next_spawn = int(rng2.integers(FPS * 1, FPS * 4))
+    x_ph = 0.0
+    TOTAL = FPS * 120
+    for f in range(TOTAL):
+        x_ph   += 0.0009
+        canvas  = np.full((GH, GW), 5.0, dtype=np.float32)
+        if f >= next_spawn:
+            ls = int(rng2.integers(FPS * 10, FPS * 18))
+            pulses.append(dict(
+                cy=float(rng2.uniform(1.0, GH - 2.0)),
+                life=ls, max_life=ls,
+                max_r=float((GH - 1) * 1.2),
+                sigma=float(rng2.uniform(0.7, 1.4)),
+                peak=float(rng2.uniform(95, 160)),
+                x_ph0=float(rng2.uniform(0, 2 * math.pi)),
+            ))
+            next_spawn = f + int(rng2.integers(FPS * 10, FPS * 18))
+        alive = []
+        for p in pulses:
+            p["life"] -= 1
+            if p["life"] <= 0:
+                continue
+            t     = 1.0 - p["life"] / p["max_life"]
+            r     = p["max_r"] * t
+            env   = math.sin(math.pi * t) ** 1.5
+            dist_y = np.abs(ys - p["cy"])
+            ring_y = np.exp(-0.5 * ((dist_y - r) / p["sigma"]) ** 2)
+            x_env  = 0.80 + 0.20 * np.sin(0.006 * xs + p["x_ph0"])
+            canvas += p["peak"] * env * np.outer(ring_y, x_env)
+            alive.append(p)
+        pulses = alive
+        write_frame(w, np.clip(canvas, 0, 255))
+    close(w, name)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SCROLLING TEXT PATTERNS  (111 – 117)
+# 5 × 7 pixel bitmap font, capital letters.
+# Scroll: right → left at 1 pixel per 2 frames  (15 px / s).
+# Two full loops per video; glyphs placed in grid rows 1–7 (1-px margins).
+# At 4× preview scale glyphs become 20 × 28 px — readable through smoke.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 5 × 7 bitmap glyphs — row list, top→bottom; each value is a 5-bit int
+# (MSB = leftmost pixel, bit 0 = rightmost pixel)
+_FONT5x7: dict = {
+    'A': [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+    'B': [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
+    'C': [0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110],
+    'D': [0b11100, 0b10010, 0b10001, 0b10001, 0b10001, 0b10010, 0b11100],
+    'E': [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
+    'F': [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
+    'G': [0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01111],
+    'H': [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
+    'I': [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b11111],
+    'J': [0b00111, 0b00010, 0b00010, 0b00010, 0b00010, 0b10010, 0b01100],
+    'K': [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
+    'L': [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
+    'M': [0b10001, 0b11011, 0b10101, 0b10001, 0b10001, 0b10001, 0b10001],
+    'N': [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
+    'O': [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+    'P': [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
+    'R': [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
+    'S': [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
+    'T': [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
+    'U': [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
+    'V': [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
+    'W': [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001],
+    'X': [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
+    'Y': [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
+    'Z': [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
+    '-': [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
+    '.': [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00100],
+}
+_CHAR_W   = 5
+_CHAR_GAP = 1
+_SPACE_W  = 4
+
+
+def _render_text_strip(text: str, brightness: float = 200.0) -> np.ndarray:
+    """Render text string to a (7, W) float32 pixel strip."""
+    cols: list = []
+    for ch in text.upper():
+        if ch == ' ':
+            for _ in range(_SPACE_W):
+                cols.append(np.zeros(7, dtype=np.float32))
+        else:
+            glyph = _FONT5x7.get(ch)
+            if glyph is None:
+                for _ in range(_CHAR_W + _CHAR_GAP):
+                    cols.append(np.zeros(7, dtype=np.float32))
+                continue
+            for ci in range(_CHAR_W):
+                col = np.array(
+                    [(glyph[ri] >> (_CHAR_W - 1 - ci)) & 1 for ri in range(7)],
+                    dtype=np.float32) * brightness
+                cols.append(col)
+            for _ in range(_CHAR_GAP):
+                cols.append(np.zeros(7, dtype=np.float32))
+    if not cols:
+        return np.zeros((7, 1), dtype=np.float32)
+    return np.column_stack(cols)
+
+
+def _make_text_scroll(number: int, label: str, text: str,
+                      frames_per_px: int = 2, passes: int = 2,
+                      brightness: float = 200.0) -> None:
+    """Render a right-to-left scrolling text video onto the 480x9 grid."""
+    fname       = f"{number}_{label}.webm"
+    print(f"[{number}] {fname} …")
+    strip        = _render_text_strip(text, brightness)
+    tw           = strip.shape[1]
+    cycle_px     = GW + tw               # px to advance for one full loop
+    total_frames = cycle_px * frames_per_px * passes
+    Y_OFF        = 1                     # glyphs in rows 1–7 (9-row grid)
+    w = open_writer(fname)
+    for f in range(total_frames):
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        pos    = (f // frames_per_px) % cycle_px
+        x_left = GW - pos                # leftmost column of strip on screen
+        dst_s  = max(x_left, 0)
+        dst_e  = min(x_left + tw, GW)
+        src_s  = dst_s - x_left
+        src_e  = src_s + (dst_e - dst_s)
+        if 0 <= src_s < src_e <= tw and dst_s < dst_e:
+            for gy in range(7):
+                ry = gy + Y_OFF
+                if 0 <= ry < GH:
+                    canvas[ry, dst_s:dst_e] = strip[gy, src_s:src_e]
+        write_frame(w, canvas)
+    close(w, fname)
+
+
+# 111 – JULIAN CHARRIERE
+def make_111_julian_charriere() -> None:
+    _make_text_scroll(111, "julian_charriere", "JULIAN CHARRIERE")
+
+
+# 112 – THOMAS BANGALTER
+def make_112_thomas_bangalter() -> None:
+    _make_text_scroll(112, "thomas_bangalter", "THOMAS BANGALTER")
+
+
+# 113 – RAMPA
+def make_113_rampa() -> None:
+    _make_text_scroll(113, "rampa", "RAMPA")
+
+
+# 114 – FELIX DEUFEL
+def make_114_felix_deufel() -> None:
+    _make_text_scroll(114, "felix_deufel", "FELIX DEUFEL")
+
+
+# 115 – BAPTISTE SCHICKLIN
+def make_115_baptiste_schicklin() -> None:
+    _make_text_scroll(115, "baptiste_schicklin", "BAPTISTE SCHICKLIN")
+
+
+# 116 – VICTOR MAZON
+def make_116_victor_mazon() -> None:
+    _make_text_scroll(116, "victor_mazon", "VICTOR MAZON")
+
+
+# 117 – ALL NAMES  (single continuous loop, slightly faster: 1 px / frame)
+def make_117_all_names() -> None:
+    text = (
+        "JULIAN CHARRIERE        "
+        "THOMAS BANGALTER        "
+        "RAMPA        "
+        "FELIX DEUFEL        "
+        "BAPTISTE SCHICKLIN        "
+        "VICTOR MAZON"
+    )
+    _make_text_scroll(117, "all_names", text, frames_per_px=2, passes=2)
+
+
 if __name__ == "__main__":
     import sys
     start_from = int(sys.argv[1]) if len(sys.argv) > 1 else 1
@@ -3350,6 +4945,55 @@ if __name__ == "__main__":
         make_70_surface_tension,       # 70  droplet blobs merge/split via surface tension
         make_71_turbulence_burst,      # 71  kolmogorov energy cascade octaves
         make_72_symbiosis,             # 72  two particle populations attract and flare on contact
+        # ── Organic particle patterns: fire / sparks / flocks / descent ─────
+        make_73_ember_drift,           # 73  slow hot embers rise from base row, crackle
+        make_74_murmuration_slow,      # 74  120 boids flock at 4× slower speed
+        make_75_sparkler,              # 75  figure-8 emitter sprays fading spark particles
+        make_76_crackle_field,         # 76  rare electric discharge flashes + expanding rings
+        make_77_migration,             # 77  V-formation bird clusters cross slowly L→R
+        make_78_deep_fire,             # 78  gaussian fire wisps rise through all 9 rows
+        make_79_slow_aurora_veil,      # 79  ultra-slow aurora with 20–35 s brightness cycles
+        make_80_descent,               # 80  pollen/stone particles fall; splashes on impact
+        # ── Slow atmosphere / smoke-diffusion patterns ─────────────────────
+        make_81_gossamer_drift,        # 81  80 motes, triangle fade, very slow drift
+        make_82_smoke_tendrils,        # 82  8 gaussian wisps meandering in x, breathing
+        make_83_pollen_cloud,          # 83  200 brownian particles, very dim, all rows
+        make_84_breath_motes,          # 84  gaussian spot expands slowly then fades
+        make_85_dust_settle,           # 85  60 particles settle slowly top→bottom
+        make_86_candle_smoke,          # 86  single plume rises + widens from emitter
+        make_87_fog_drift,             # 87  4 fog bands drifting in y + h-modulation
+        make_88_nebula_float,          # 88  5 large soft gaussian blobs floating slowly
+        make_89_incense_curl,          # 89  sinusoidal smoke ribbon rising from emitter
+        make_90_gentle_snow,           # 90  40 flakes fall very slowly with wobble
+        make_91_deep_float,            # 91  60 dim random-walk particles, rare pulses
+        make_92_ash_settle,            # 92  50 particles drift right + slowly down (wind)
+        make_93_corona_drift,          # 93  40 particles orbit slowly wandering center
+        make_94_spirit_lights,         # 94  8 dim lights slowly wandering, fading in/out
+        make_95_heat_shimmer,          # 95  6-layer oscillating vertical brightness bands
+        make_96_dust_vortex,           # 96  50 particles in slow spiral around drifting center
+        make_97_void_bloom,            # 97  dark field, rare dim expanding ring-blooms
+        make_98_suspension,            # 98  100 particles oscillating around fixed homes
+        make_99_slow_membrane,         # 99  4 full-width waves, ultra-slow drift + 30–60 s amp
+        make_100_starfield_drift,      # 100 3 parallax layers of dim drifting pixels
+        # ── Depth-travel atmosphere: brightness moves front↔back through Y ──
+        make_101_depth_fog_roll,       # 101 Gaussian fog drifts Y=0→8→0 w/ beating amp
+        make_102_depth_row_breath,     # 102 9 rows each breathe own beating period → rolling wave
+        make_103_depth_tide_swell,     # 103 sigmoid waterline rises/falls through depth
+        make_104_depth_slow_wave,      # 104 two phase-gradient waves traveling front↔back
+        make_105_depth_aurora_bands,   # 105 3 narrow bands drifting in Y w/ individual envelopes
+        make_106_depth_layer_bloom,    # 106 random rows bloom raised-cosine 8–20 s each
+        make_107_depth_hump_travel,    # 107 single brightness hump sweeps Y=0→8→0 over 30 s
+        make_108_depth_breath_expand,  # 108 center Gaussian sigma breathes 0.4→4.5, amp 35 s
+        make_109_depth_veil_layers,    # 109 5 wide hazes drifting at different Y speeds
+        make_110_depth_ripple_pulse,   # 110 1D ring pulses expand in depth from random row
+        # ── Scrolling text (right → left, 5×7 bitmap font, 15 px/s) ────────────
+        make_111_julian_charriere,     # 111 JULIAN CHARRIERE
+        make_112_thomas_bangalter,     # 112 THOMAS BANGALTER
+        make_113_rampa,                # 113 RAMPA
+        make_114_felix_deufel,         # 114 FELIX DEUFEL
+        make_115_baptiste_schicklin,   # 115 BAPTISTE SCHICKLIN
+        make_116_victor_mazon,         # 116 VICTOR MAZON
+        make_117_all_names,            # 117 all six names in one long loop
     ]
     for idx, fn in enumerate(steps, start=1):
         if idx >= start_from:
