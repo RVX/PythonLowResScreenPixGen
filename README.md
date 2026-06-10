@@ -292,6 +292,21 @@ Output goes to `Monolith_video_folder/` relative to the script.
 | 55 | `55_coral_pulse.webm` | Radial rings pulsing from 8 fixed polyp positions |
 | 56 | `56_deep_current.webm` | Laminar Poiseuille shear — fastest flow in centre rows |
 | 57 | `57_phosphene.webm` | Bright concentric rings expanding from random origins |
+| 58 | `58_breath_of_deep.webm` | Sigmoid inhale/exhale from back to front Y with X ripple texture |
+| 59 | `59_silt_settling.webm` | Particles born mid-depth, sink to front row, pool and evaporate |
+| 60 | `60_pressure_wave.webm` | Two damped pressure fronts bouncing along Y axis |
+| 61 | `61_depth_weed.webm` | Per-column stems rooted at Y=8, tips sway in Y with slow current |
+| 62 | `62_upwelling.webm` | Column groups surge bright from back to front row like deep-sea upwelling |
+| 63 | `63_peristalsis.webm` | Muscular contraction ring travels Y=0→8 with trailing halo |
+| 64 | `64_tidal_bore.webm` | Fast bright front rushes Y=0→8 with long turbulent aftermath |
+| 65 | `65_neural_propagation.webm` | Bidirectional action-potential wave from Y origin |
+| 66 | `66_slime_mold.webm` | Physarum agents with sensors converge to bright network lattice |
+| 67 | `67_sand_ripple.webm` | Two interfering aeolian ripple systems with Y shear |
+| 68 | `68_cilia_sweep.webm` | Metachronal cilia beat wave along X axis |
+| 69 | `69_magnetotaxis.webm` | Magnetic bacteria aligning to slowly rotating field |
+| 70 | `70_surface_tension.webm` | Droplet blobs cohese/split via surface-tension forces |
+| 71 | `71_turbulence_burst.webm` | Kolmogorov energy cascade across octaves |
+| 72 | `72_symbiosis.webm` | Two particle populations: A drifts right, B seeks A and flares on contact |
 
 ---
 

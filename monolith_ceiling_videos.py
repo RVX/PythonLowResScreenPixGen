@@ -2513,6 +2513,756 @@ def make_57_phosphene() -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ORGANIC Y-AXIS / DEPTH MOVEMENTS  (58 – 65)
+# All motion is primarily along Y (the 9-row depth axis).
+# Y=0 = back wall.  Y=8 = audience edge (front).
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 58 – BREATH OF THE DEEP
+# The whole ceiling inhales slowly from the back (Y=0) brightening toward
+# the front (Y=8), holds, then exhales back.  Brightness curves are
+# sigmoid-shaped so the transition zone is soft and biological.
+# A faint low-frequency X ripple modulates the envelope to avoid
+# the effect reading as a flat wash.
+
+def make_58_breath_of_deep() -> None:
+    name = "58_breath_of_deep.webm"
+    print(f"[58] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(5800)
+
+    TOTAL  = FPS * 70
+    PERIOD = FPS * 16      # 16 s per full breath cycle
+    xs     = np.arange(GW, dtype=np.float32)
+    ys     = np.arange(GH, dtype=np.float32)
+
+    for f in range(TOTAL):
+        phase = 2 * math.pi * f / PERIOD
+        # Breath envelope: 0 (exhale) → 1 (inhale) slow sinusoid
+        breath = 0.5 + 0.5 * math.sin(phase)
+        # Sigmoid front-to-back reveal: front rows light up first when inhaling
+        # front_edge moves from Y=8 (front) to Y=0 (back) as breath increases
+        edge   = (1.0 - breath) * (GH - 1)      # 0=full, GH-1=none
+        y_sig  = np.clip(ys - edge, 0, GH - 1) / max(GH - 1 - edge, 0.01)
+        y_env  = 1.0 / (1.0 + np.exp(-6.0 * (y_sig - 0.5)))  # sigmoid
+
+        # Subtle X ripple — organic texture, not geometric
+        x_ripple = 1.0 + 0.07 * np.sin(xs * 0.042 + f * 0.019) + \
+                   0.04 * np.sin(xs * 0.018 - f * 0.007)
+
+        canvas = np.outer(y_env, x_ripple) * breath * 180.0
+        write_frame(w, np.clip(canvas, 0, 180))
+    close(w, name)
+
+
+# 59 – SILT SETTLING
+# Bright particles are born at a random Y row (like disturbed sediment)
+# and slowly sink — move from whatever row toward Y=8 (front/floor).
+# They accumulate and pool in the front rows, then slowly evaporate.
+# New disturbance events fire every ~10 s.
+
+def make_59_silt_settling() -> None:
+    name = "59_silt_settling.webm"
+    print(f"[59] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(5900)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+
+    N         = 60
+    px        = rng2.uniform(0, GW, N)
+    py        = rng2.uniform(0, GH - 1, N).astype(float)
+    vy        = rng2.uniform(0.008, 0.040, N)   # sink speed rows/frame
+    settled   = np.zeros(N, dtype=bool)
+    br        = rng2.uniform(80, 170, N)
+    TOTAL     = FPS * 75
+    next_dist = FPS * 10
+
+    for f in range(TOTAL):
+        buf *= 0.985   # very slow evaporation / pooling glow
+
+        for i in range(N):
+            if not settled[i]:
+                py[i] = min(py[i] + vy[i], float(GH - 1))
+                if py[i] >= GH - 1:
+                    settled[i] = True
+            iy = int(np.clip(py[i], 0, GH - 1))
+            ix = int(np.clip(px[i], 0, GW - 1))
+            buf[iy, ix] = max(buf[iy, ix], br[i])
+
+        if f == next_dist:
+            row_disturb = rng2.integers(0, GH)
+            idxs = rng2.choice(N, N // 3, replace=False)
+            for i in idxs:
+                px[i]      = rng2.uniform(0, GW)
+                py[i]      = float(row_disturb)
+                vy[i]      = rng2.uniform(0.008, 0.04)
+                settled[i] = False
+                br[i]      = rng2.uniform(80, 170)
+            next_dist = f + rng2.integers(FPS * 8, FPS * 14)
+
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 60 – PRESSURE WAVE
+# A single over-pressure front propagates from Y=0 (back) to Y=8 (front)
+# — wide Gaussian brightness band that expands and fades as it travels,
+# then bounces softly off the front edge and returns.
+# Period ~20 s.  Like a pressure wave in a fluid-filled room.
+
+def make_60_pressure_wave() -> None:
+    name = "60_pressure_wave.webm"
+    print(f"[60] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(6000)
+
+    TOTAL   = FPS * 70
+    xs      = np.arange(GW, dtype=np.float32)
+    ys      = np.arange(GH, dtype=np.float32)
+
+    # Two damped waves travelling in opposite directions
+    waves = [
+        {"pos": 0.0, "vel": (GH - 1) / (FPS * 9), "amp": 160.0, "sig": 1.4},
+        {"pos": float(GH - 1), "vel": -(GH - 1) / (FPS * 11), "amp": 100.0, "sig": 1.0},
+    ]
+
+    for f in range(TOTAL):
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        for wave in waves:
+            wave["pos"] += wave["vel"]
+            if wave["pos"] > GH - 1:
+                wave["pos"] = GH - 1
+                wave["vel"] *= -0.72
+                wave["amp"] *= 0.82
+            if wave["pos"] < 0:
+                wave["pos"] = 0
+                wave["vel"] *= -0.72
+                wave["amp"] *= 0.82
+            if wave["amp"] < 4:
+                wave["pos"]  = 0.0
+                wave["vel"]  = (GH - 1) / (FPS * 9)
+                wave["amp"]  = rng2.uniform(120, 170)
+
+            y_env = np.exp(-0.5 * ((ys - wave["pos"]) / wave["sig"]) ** 2)
+            x_env = 1.0 + 0.05 * np.sin(xs * 0.031 + f * 0.021)
+            canvas += np.outer(y_env, x_env) * wave["amp"]
+
+        write_frame(w, np.clip(canvas, 0, 220))
+    close(w, name)
+
+
+# 61 – DEPTH WEED
+# Each X column has a vertical "stem" that sways gently in an
+# independently-phased sinusoidal current.  The stem is a dim
+# continuous glow from Y=8 (root) up to a drifting bright tip.
+# The weed colony breathes: all tips surge brighter on slow 18 s cycle.
+
+def make_61_depth_weed() -> None:
+    name = "61_depth_weed.webm"
+    print(f"[61] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(6100)
+
+    TOTAL      = FPS * 70
+    root_y     = GH - 1    # all roots at front (audience)
+    tip_rest   = rng2.uniform(2.0, 5.5, GW).astype(np.float32)
+    tip_amp    = rng2.uniform(0.5, 2.0, GW).astype(np.float32)
+    tip_freq   = rng2.uniform(0.008, 0.022, GW).astype(np.float32)
+    tip_phase  = rng2.uniform(0, 2 * math.pi, GW).astype(np.float32)
+    stem_bright= rng2.uniform(30, 70, GW).astype(np.float32)
+    tip_bright = rng2.uniform(100, 180, GW).astype(np.float32)
+    BREATH     = FPS * 18
+
+    ys = np.arange(GH, dtype=np.float32)
+
+    for f in range(TOTAL):
+        tip_y = tip_rest + tip_amp * np.sin(tip_freq * f + tip_phase)
+        tip_y = np.clip(tip_y, 0.5, GH - 1.5)             # (GW,)
+
+        breath = 0.7 + 0.3 * math.sin(2 * math.pi * f / BREATH)
+
+        # Vectorised: ys (GH,1) broadcast against tip_y (1,GW)
+        stem_centres = (tip_y[None, :] + root_y) / 2.0     # (1,GW)
+        stem = stem_bright[None, :] * np.exp(
+            -0.5 * ((ys[:, None] - stem_centres) / 2.0) ** 2)
+        tips = tip_bright[None, :] * breath * np.exp(
+            -0.5 * ((ys[:, None] - tip_y[None, :]) / 0.65) ** 2)
+        canvas = np.maximum(stem, tips).astype(np.float32)
+        write_frame(w, np.clip(canvas, 0, 200))
+    close(w, name)
+
+
+# 62 – UPWELLING
+# Cold, dark deep water (back rows) periodically rises to the surface
+# (front row) in slow columns of brightening light — like a deep-sea
+# upwelling current bringing nutrients to the surface.
+# Random column groups activate; bright front row pulse dies slowly.
+
+def make_62_upwelling() -> None:
+    name = "62_upwelling.webm"
+    print(f"[62] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(6200)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+
+    TOTAL      = FPS * 70
+    UPSURGE    = FPS * 7     # new upwelling pulse every ~7 s
+    next_surge = 0
+    # Brightness envelope per column: 0 = settled, >0 = rising
+    col_phase  = np.zeros(GW, dtype=np.float32)
+
+    for f in range(TOTAL):
+        buf *= 0.91
+
+        if f >= next_surge:
+            # Activate a random band of ~30–80 contiguous columns
+            cx         = rng2.integers(20, GW - 20)
+            bw         = rng2.integers(20, 80)
+            x0         = max(0, cx - bw // 2)
+            x1         = min(GW, cx + bw // 2)
+            col_phase[x0:x1] = rng2.uniform(0, 2 * math.pi, x1 - x0).astype(np.float32)
+            next_surge = f + rng2.integers(FPS * 5, FPS * 10)
+
+        # Advance phase; bright front row (Y=8) when phase sin > 0
+        col_phase += 0.04
+        surf_bright = np.maximum(0, np.sin(col_phase)) * rng2.uniform(100, 180, GW)
+        buf[GH - 1, :] = np.maximum(buf[GH - 1, :], surf_bright.astype(np.float32))
+
+        # Faint mid-water glow proportional to surface activity
+        for y in range(GH - 2, -1, -1):
+            fade = ((GH - 1 - y) / (GH - 1)) ** 1.8
+            row_glow = surf_bright * (1.0 - fade) * 0.4
+            buf[y, :] = np.maximum(buf[y, :], row_glow.astype(np.float32))
+
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 63 – PERISTALSIS
+# Periodic contractions travel along Y like muscular peristalsis —
+# a bright ring of illumination that squeezes forward
+# (Y=0→8) then fades, followed by another.
+# X is full-width but modulated by a slow ripple so it doesn't read flat.
+
+def make_63_peristalsis() -> None:
+    name = "63_peristalsis.webm"
+    print(f"[63] {name} ...")
+    w    = open_writer(name)
+
+    TOTAL     = FPS * 70
+    PERIOD    = FPS * 11    # one contraction every 11 s
+    PEAK      = 200.0
+    xs        = np.arange(GW, dtype=np.float32)
+    ys        = np.arange(GH, dtype=np.float32)
+
+    for f in range(TOTAL):
+        phase = (f % PERIOD) / PERIOD    # 0→1 per cycle
+        # Contraction front moves from Y=0 to Y=8
+        centre = phase * (GH - 1)
+        # Sharp Gaussian — narrow ring
+        y_env  = np.exp(-0.5 * ((ys - centre) / 0.75) ** 2)
+        # Trailing dim halo
+        tail   = np.exp(-np.maximum(ys - centre, 0) * 1.2) * 0.35
+        y_tot  = np.maximum(y_env, tail)
+        # Organic X texture — low-amplitude spatially random ripple
+        x_env  = 1.0 + 0.08 * np.sin(xs * 0.055 + f * 0.012) + \
+                 0.05 * np.sin(xs * 0.025 - f * 0.008)
+        canvas = np.outer(y_tot, x_env) * PEAK
+        write_frame(w, np.clip(canvas, 0, PEAK))
+    close(w, name)
+
+
+# 64 – TIDAL BORE
+# A single very bright thin wavefront (tidal bore) rushes from the back
+# (Y=0) to the front (Y=8) in ~3 s, then a long slow turbulent aftermath
+# gradually dims over ~14 s.  Repeats with a dark pause of ~10 s.
+# The bore X profile is jagged/noisy rather than smooth.
+
+def make_64_tidal_bore() -> None:
+    name = "64_tidal_bore.webm"
+    print(f"[64] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(6400)
+
+    TOTAL     = FPS * 75
+    ys        = np.arange(GH, dtype=np.float32)
+    xs        = np.arange(GW, dtype=np.float32)
+
+    bore_speed  = (GH - 1) / (FPS * 2.8)     # rows/frame — crosses in ~2.8 s
+    BORE_BRIGHT = 230.0
+    TURB_DECAY  = 0.96
+
+    bore_y    = -1.0
+    turbulence = np.zeros((GH, GW), dtype=np.float32)
+    next_bore  = 0
+
+    for f in range(TOTAL):
+        turbulence *= TURB_DECAY
+
+        if f >= next_bore:
+            bore_y += bore_speed
+            if bore_y > GH - 1:
+                bore_y    = -1.0
+                next_bore = f + rng2.integers(FPS * 8, FPS * 14)
+            else:
+                # Bore: noisy bright row  + rows behind glowing hot
+                noise = rng2.uniform(0.6, 1.0, GW).astype(np.float32)
+                row   = int(np.clip(bore_y, 0, GH - 1))
+                turbulence[row, :] = np.maximum(turbulence[row, :],
+                                                noise * BORE_BRIGHT)
+                # Deposit turbulent energy in rows behind the front
+                for behind in range(1, row + 1):
+                    decay = math.exp(-behind * 0.55)
+                    turbulence[row - behind, :] = np.maximum(
+                        turbulence[row - behind, :],
+                        noise * BORE_BRIGHT * decay * 0.4)
+
+        write_frame(w, turbulence)
+    close(w, name)
+
+
+# 65 – NEURAL PROPAGATION
+# Y-axis signal propagation inspired by action potentials:
+# A stimulus fires at a random column and travels both forward (toward Y=8)
+# AND backward (toward Y=0) simultaneously — a depolarisation wave.
+# After it passes, a brief refractory shadow (dim) lingers before the
+# column recovers.  Multiple independent propagations overlap.
+
+def make_65_neural_propagation() -> None:
+    name = "65_neural_propagation.webm"
+    print(f"[65] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(6500)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+
+    TOTAL      = FPS * 70
+    SPAWN_INT  = FPS * 5
+    pulses: list[dict] = []
+    xs_a = np.arange(GW, dtype=np.float32)
+    ys_a = np.arange(GH, dtype=np.float32)
+
+    def new_pulse():
+        return {
+            "ox":    rng2.uniform(GW * 0.1, GW * 0.9),   # X centre of stimulus
+            "oy":    rng2.uniform(0.5, GH - 1.5),         # Y origin
+            "r":     0.0,
+            "speed": rng2.uniform(0.07, 0.18),            # rows/frame
+            "peak":  rng2.uniform(120, 220),
+            "xsig":  rng2.uniform(15, 55),                # X spread of the column
+        }
+
+    for f in range(TOTAL):
+        buf *= 0.88
+
+        if f % SPAWN_INT == 0 and len(pulses) < 5:
+            pulses.append(new_pulse())
+
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        alive  = []
+        for p in pulses:
+            p["r"] += p["speed"]
+            x_env = np.exp(-0.5 * ((xs_a - p["ox"]) / p["xsig"]) ** 2)
+            # Forward ring (toward Y=8)
+            yf = p["oy"] + p["r"]
+            rf = np.exp(-0.5 * ((ys_a - yf) / 0.6) ** 2)
+            # Backward ring (toward Y=0)
+            yb = p["oy"] - p["r"]
+            rb = np.exp(-0.5 * ((ys_a - yb) / 0.6) ** 2)
+            # Refractory zone between the two fronts (dim)
+            refractory = np.exp(-0.5 * ((ys_a - p["oy"]) / (p["r"] * 0.5 + 0.5)) ** 2) * 0.3
+            ring = (np.maximum(rf, rb) - refractory).clip(0)
+            canvas += np.outer(ring, x_env) * p["peak"]
+            if p["r"] < GH + 2:
+                alive.append(p)
+        pulses = alive
+
+        np.maximum(buf, canvas, out=buf)
+        write_frame(w, np.clip(buf, 0, 255))
+    close(w, name)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MORE NATURAL PATTERNS  (66 – 72)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# 66 – SLIME MOLD
+# Physarum-inspired network: particles oscillate along tube-like paths
+# that reinforce themselves.  Nutrient nodes (fixed bright points) anchor
+# the network.  Over time tubes converge to a sparse bright lattice.
+
+def make_66_slime_mold() -> None:
+    name = "66_slime_mold.webm"
+    print(f"[66] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(6600)
+    trail = np.zeros((GH, GW), dtype=np.float32)
+
+    N_AGENTS  = 120
+    N_NODES   = 6
+    # Nutrient nodes
+    node_x = rng2.integers(40, GW - 40, N_NODES)
+    node_y = rng2.integers(1, GH - 1, N_NODES)
+
+    px     = rng2.uniform(0, GW, N_AGENTS)
+    py     = rng2.uniform(0, GH - 1, N_AGENTS)
+    angle  = rng2.uniform(0, 2 * math.pi, N_AGENTS)
+    SENSOR = 4.0     # sensor look-ahead distance
+    TURN   = 0.35    # turn rate toward chemo
+
+    TOTAL = FPS * 75
+
+    for f in range(TOTAL):
+        trail *= 0.988
+
+        for i in range(N_AGENTS):
+            # Sense ahead, left, right
+            sa  = angle[i]
+            for da, idx in [(0, 0), (-TURN, 1), (TURN, 2)]:
+                sx  = px[i] + SENSOR * math.cos(sa + da)
+                sy  = py[i] + SENSOR * math.sin(sa + da) / 3.5
+                isy = int(np.clip(sy, 0, GH - 1))
+                isx = int(sx) % GW
+                samples = [trail[isy, isx]]
+                # Add attraction toward nutrient nodes
+                for ni in range(N_NODES):
+                    d = math.hypot(sx - node_x[ni], (sy - node_y[ni]) * 3.5)
+                    samples.append(30.0 / max(d, 1.0))
+                if idx == 0:
+                    fwd = sum(samples)
+                elif idx == 1:
+                    lft = sum(samples)
+                else:
+                    rgt = sum(samples)
+
+            if fwd > lft and fwd > rgt:
+                pass
+            elif lft > rgt:
+                angle[i] -= TURN
+            elif rgt > lft:
+                angle[i] += TURN
+            else:
+                angle[i] += rng2.uniform(-TURN, TURN)
+
+            angle[i] += rng2.uniform(-0.08, 0.08)
+            px[i]     = (px[i] + math.cos(angle[i]) * 0.8) % GW
+            py[i]     = float(np.clip(py[i] + math.sin(angle[i]) * 0.08, 0, GH - 1))
+
+            iy = int(np.clip(py[i], 0, GH - 1))
+            ix = int(px[i]) % GW
+            trail[iy, ix] = min(trail[iy, ix] + 4.0, 180.0)
+
+        # Nutrient nodes always glow
+        for ni in range(N_NODES):
+            trail[node_y[ni], node_x[ni]] = min(trail[node_y[ni], node_x[ni]] + 8, 220)
+
+        write_frame(w, trail)
+    close(w, name)
+
+
+# 67 – SAND RIPPLE
+# The classic aeolian sand ripple: a spatial sinusoid whose wavelength
+# slowly drifts and whose amplitude breathes.  Two ripple systems with
+# slightly different wavelengths interfere to create a slowly-evolving
+# moiré that looks unmistakably like raked sand or a shallow seabed.
+
+def make_67_sand_ripple() -> None:
+    name = "67_sand_ripple.webm"
+    print(f"[67] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(6700)
+
+    TOTAL = FPS * 70
+    xs    = np.arange(GW, dtype=np.float32)
+    ys    = np.arange(GH, dtype=np.float32)
+
+    # Two ripple systems
+    sys1  = {"lam": 35.0, "dlam": 0.004, "phase": 0.0, "spd": 0.015,
+             "amp": 110.0, "y_shear": 0.18}
+    sys2  = {"lam": 52.0, "dlam": -0.003, "phase": 1.8, "spd": -0.009,
+             "amp": 60.0,  "y_shear": -0.12}
+
+    for f in range(TOTAL):
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        for s in (sys1, sys2):
+            s["lam"]   = max(15.0, s["lam"] + s["dlam"])
+            s["phase"] += s["spd"]
+            k          = 2 * math.pi / s["lam"]
+            for yi, y in enumerate(ys):
+                phase_y = s["phase"] + y * s["y_shear"]
+                row     = (0.5 + 0.5 * np.sin(k * xs + phase_y)) * s["amp"]
+                canvas[yi, :] += row
+
+        # Soft Y envelope — brightest in mid-depth rows
+        y_env = np.exp(-0.5 * ((ys - (GH - 1) / 2) / 2.8) ** 2)
+        canvas = canvas * y_env[:, None]
+        write_frame(w, np.clip(canvas, 0, 210))
+    close(w, name)
+
+
+# 68 – CILIA SWEEP
+# Thousands of microscopic hair-like cilia beat in a coordinated
+# metachronal wave — each X column beats slightly later than the one
+# to its left.  Each column is a dim "hair" that flicks between
+# bent (bright at front rows) and extended (bright at back rows).
+
+def make_68_cilia_sweep() -> None:
+    name = "68_cilia_sweep.webm"
+    print(f"[68] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(6800)
+
+    TOTAL     = FPS * 70
+    PERIOD    = FPS * 3         # 3 s per full beat cycle
+    PHASE_LAG = 0.018           # rad/column — metachronal wave lag
+    phases    = rng2.uniform(0, 2 * math.pi, GW).astype(np.float32)
+    # Small per-column variation in frequency for natural feel
+    freqs     = (2 * math.pi / PERIOD * (
+        1 + rng2.uniform(-0.06, 0.06, GW))).astype(np.float32)
+    ys        = np.arange(GH, dtype=np.float32)
+
+    for f in range(TOTAL):
+        col_phase = phases + freqs * f + PHASE_LAG * np.arange(GW, dtype=np.float32)
+        # Beat position: 0 = fully bent (bright at Y=GH-1), 1 = extended (Y=0)
+        beat       = 0.5 + 0.5 * np.sin(col_phase)   # (GW,)
+        # Each column: Gaussian centred on beat*tip + (1-beat)*root
+        tip_y = beat * (GH - 1) + (1 - beat) * 0.0
+        bright = 80 + 120 * (0.5 + 0.5 * np.sin(col_phase - math.pi / 6))
+        canvas = np.exp(-0.5 * ((ys[:, None] - tip_y[None, :]) / 0.7) ** 2) * bright[None, :]
+        write_frame(w, np.clip(canvas.astype(np.float32), 0, 210))
+    close(w, name)
+
+
+# 69 – MAGNETOTAXIS
+# Magnetic bacteria particles sense an invisible slowly-rotating field
+# and align themselves to it.  Their collective orientation forms a drifting
+# bright streak that slowly arcs across both X and Y.
+
+def make_69_magnetotaxis() -> None:
+    name = "69_magnetotaxis.webm"
+    print(f"[69] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(6900)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+
+    N      = 80
+    px     = rng2.uniform(0, GW, N)
+    py     = rng2.uniform(0, GH - 1, N)
+    angle  = rng2.uniform(0, 2 * math.pi, N)
+    br     = rng2.uniform(80, 170, N)
+    TOTAL  = FPS * 70
+    FIELD_PERIOD = FPS * 28   # field rotates 360° in 28 s
+
+    for f in range(TOTAL):
+        buf *= 0.93
+        field_angle = 2 * math.pi * f / FIELD_PERIOD
+        # X component governs horizontal drift; tiny Y component
+        target_ax = field_angle
+        target_ay = field_angle + math.pi / 4
+
+        for i in range(N):
+            # Turn toward field direction
+            da = (target_ax - angle[i] + math.pi) % (2 * math.pi) - math.pi
+            angle[i] += da * 0.04 + rng2.uniform(-0.06, 0.06)
+            spd_x = math.cos(angle[i]) * 1.1
+            spd_y = math.sin(angle[i]) * 0.09
+            px[i] = (px[i] + spd_x) % GW
+            py[i] = float(np.clip(py[i] + spd_y, 0, GH - 1))
+            iy    = int(py[i])
+            ix    = int(px[i]) % GW
+            buf[iy, ix] = max(buf[iy, ix], br[i])
+
+        write_frame(w, buf)
+    close(w, name)
+
+
+# 70 – SURFACE TENSION
+# Water surface tension makes droplets form and split.
+# Modelled as competing Gaussian blobs that merge when close
+# and split when they exceed a size threshold.  Dark background.
+
+def make_70_surface_tension() -> None:
+    name = "70_surface_tension.webm"
+    print(f"[70] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(7000)
+
+    TOTAL = FPS * 70
+    xs    = np.arange(GW, dtype=np.float32)
+    ys    = np.arange(GH, dtype=np.float32)
+
+    N    = 7
+    bx   = rng2.uniform(30, GW - 30, N).astype(float)
+    by_  = rng2.uniform(1.0, GH - 2.0, N)
+    bvx  = rng2.uniform(-0.25, 0.25, N)
+    bvy  = rng2.uniform(-0.015, 0.015, N)
+    bsig = rng2.uniform(18, 42, N).astype(float)   # X sigma
+    bamp = rng2.uniform(80, 150, N).astype(float)
+
+    for f in range(TOTAL):
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        for i in range(N):
+            bx[i]   = (bx[i] + bvx[i]) % GW
+            by_[i]  = float(np.clip(by_[i] + bvy[i], 0.5, GH - 1.5))
+            if by_[i] <= 0.5 or by_[i] >= GH - 1.5:
+                bvy[i] *= -1
+
+            x_env = np.exp(-0.5 * ((xs - bx[i]) / bsig[i]) ** 2)
+            y_env = np.exp(-0.5 * ((ys - by_[i]) / 0.9) ** 2)
+            canvas += np.outer(y_env, x_env) * bamp[i]
+
+            # Blob drifts toward nearest neighbour (surface-tension cohesion)
+            dists = [(math.hypot(bx[i] - bx[j], (by_[i] - by_[j]) * 7.88), j)
+                     for j in range(N) if j != i]
+            dists.sort()
+            nb_d, nb_j = dists[0]
+            if nb_d > 1.0:
+                bvx[i] += (bx[nb_j] - bx[i]) * 0.0003
+                bvy[i] += (by_[nb_j] - by_[i]) * 0.002
+
+            # Split if sigma grows too large (repulsion at very close range)
+            if nb_d < bsig[i] * 0.3:
+                bvx[i] -= (bx[nb_j] - bx[i]) * 0.004
+                bvy[i] -= (by_[nb_j] - by_[i]) * 0.02
+
+            bvx[i] *= 0.97
+            bvy[i] *= 0.97
+
+        write_frame(w, np.clip(canvas, 0, 200))
+    close(w, name)
+
+
+# 71 – TURBULENCE BURST
+# Kolmogorov-inspired: periodic energy injections at large scale cascade
+# into smaller swirling eddies.  Implemented as a sum of random-phase
+# sine waves at geometrically decreasing wavelengths whose amplitude
+# peaks and decays after each injection event.
+
+def make_71_turbulence_burst() -> None:
+    name = "71_turbulence_burst.webm"
+    print(f"[71] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(7100)
+
+    TOTAL  = FPS * 70
+    xs     = np.linspace(0, 2 * math.pi * 6, GW, dtype=np.float32)
+    ys     = np.linspace(0, 2 * math.pi * 6 * GH / GW, GH, dtype=np.float32)
+    XX, YY = np.meshgrid(xs, ys)
+
+    N_OCT   = 6     # octaves
+    lambdas = [240 / (2 ** i) for i in range(N_OCT)]   # px wavelengths
+    kxs     = [(2 * math.pi / l) for l in lambdas]
+
+    # Random wave directions and phases per octave
+    kx_arr = np.array([kxs[i] * math.cos(rng2.uniform(0, 2*math.pi))
+                       for i in range(N_OCT)], dtype=np.float32)
+    ky_arr = np.array([kxs[i] * math.sin(rng2.uniform(0, 2*math.pi))
+                       for i in range(N_OCT)], dtype=np.float32)
+    phi    = rng2.uniform(0, 2*math.pi, N_OCT).astype(np.float32)
+    spd    = rng2.uniform(0.01, 0.06, N_OCT).astype(np.float32)
+
+    amp_env     = np.zeros(N_OCT, dtype=np.float32)
+    next_inject = 0
+    INJECT_INT  = FPS * 9
+
+    for f in range(TOTAL):
+        if f >= next_inject:
+            amp_env[0] = rng2.uniform(1.2, 2.0)
+            next_inject = f + INJECT_INT
+
+        # Cascade energy down octaves with decay
+        for i in range(N_OCT - 1, 0, -1):
+            amp_env[i] = amp_env[i] * 0.94 + amp_env[i-1] * 0.06
+        amp_env *= 0.97
+
+        canvas = np.zeros((GH, GW), dtype=np.float32)
+        for i in range(N_OCT):
+            amp_i = amp_env[i] / (2 ** i)      # Kolmogorov -5/3 approximate
+            canvas += amp_i * np.sin(kx_arr[i] * XX + ky_arr[i] * YY + phi[i] + spd[i] * f)
+
+        canvas = (canvas + N_OCT) / (2.0 * N_OCT) * 160.0
+        write_frame(w, np.clip(canvas, 0, 200))
+    close(w, name)
+
+
+# 72 – SYMBIOSIS
+# Two distinct populations of particles (A and B) coexist:
+# A particles drift slowly rightward and emit brightness;
+# B particles drift leftward and are attracted toward clusters of A.
+# When B reaches A it briefly flares both populations before detaching.
+# Dark background — intimate and biological.
+
+def make_72_symbiosis() -> None:
+    name = "72_symbiosis.webm"
+    print(f"[72] {name} ...")
+    w    = open_writer(name)
+    rng2 = np.random.default_rng(7200)
+    buf  = np.zeros((GH, GW), dtype=np.float32)
+
+    NA  = 20    # population A (emitters)
+    NB  = 15    # population B (seekers)
+
+    ax  = rng2.uniform(GW * 0.1, GW * 0.9, NA)
+    ay  = rng2.uniform(1, GH - 2, NA).astype(float)
+    avx = rng2.uniform(0.15, 0.40, NA)
+    avy = rng2.uniform(-0.012, 0.012, NA)
+    a_br= rng2.uniform(100, 180, NA)
+
+    bx  = rng2.uniform(GW * 0.1, GW * 0.9, NB)
+    by_ = rng2.uniform(1, GH - 2, NB).astype(float)
+    bvx = rng2.uniform(-0.30, -0.10, NB)
+    bvy = rng2.uniform(-0.010, 0.010, NB)
+    b_br= rng2.uniform(60, 130, NB)
+
+    flare = np.zeros(NA, dtype=float)   # countdown for A flare
+
+    TOTAL = FPS * 70
+
+    for _ in range(TOTAL):
+        buf *= 0.92
+
+        # Move A
+        ax = (ax + avx) % GW
+        ay = np.clip(ay + avy, 0, GH - 1)
+
+        # Move B, attracted to nearest A
+        for j in range(NB):
+            dists = [math.hypot(bx[j] - ax[i], (by_[j] - ay[i]) * 7.88)
+                     for i in range(NA)]
+            ni    = int(np.argmin(dists))
+            nd    = dists[ni]
+            if nd > 0.5:
+                bvx[j] += (ax[ni] - bx[j]) * 0.003
+                bvy[j] += (ay[ni] - by_[j]) * 0.018
+            elif nd <= 0.5:
+                # Contact — flare and detach
+                flare[ni] = 18
+                bx[j]  = rng2.uniform(0, GW)
+                by_[j] = rng2.uniform(1, GH - 2)
+                bvx[j] = rng2.uniform(-0.30, -0.10)
+                bvy[j] = rng2.uniform(-0.010, 0.010)
+
+            bvx[j] *= 0.92
+            bvy[j] *= 0.92
+            bx[j]   = (bx[j] + bvx[j]) % GW
+            by_[j]  = float(np.clip(by_[j] + bvy[j], 0, GH - 1))
+            iy = int(by_[j])
+            ix = int(bx[j]) % GW
+            buf[iy, ix] = max(buf[iy, ix], float(b_br[j]))
+
+        # Draw A (with optional flare)
+        for i in range(NA):
+            iy  = int(ay[i])
+            ix  = int(ax[i]) % GW
+            val = a_br[i] * (1 + (flare[i] / 18) * 1.4)
+            buf[iy, ix] = max(buf[iy, ix], min(float(val), 255.0))
+            if flare[i] > 0:
+                flare[i] -= 1
+
+        write_frame(w, buf)
+    close(w, name)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -2583,6 +3333,23 @@ if __name__ == "__main__":
         make_55_coral_pulse,           # 55  pulsing radial rings from fixed polyp positions
         make_56_deep_current,          # 56  laminar/poiseuille shear flow by depth row
         make_57_phosphene,             # 57  bright concentric rings expand from random origins
+        # ── Organic Y-axis / depth movements ──────────────────────────────
+        make_58_breath_of_deep,        # 58  sigmoid inhale/exhale front-to-back
+        make_59_silt_settling,         # 59  particles born mid-depth, sink to front
+        make_60_pressure_wave,         # 60  damped pressure front bouncing along Y
+        make_61_depth_weed,            # 61  per-column kelp roots at front, tips sway in Y
+        make_62_upwelling,             # 62  deep cold columns surge bright to front row
+        make_63_peristalsis,           # 63  muscular contraction ring travels Y=0→8
+        make_64_tidal_bore,            # 64  fast bright front + long turbulent aftermath
+        make_65_neural_propagation,    # 65  bidirectional action-potential wave along Y
+        # ── More natural patterns ──────────────────────────────────────────
+        make_66_slime_mold,            # 66  physarum agent network converging to bright lattice
+        make_67_sand_ripple,           # 67  two interfering aeolian ripple systems
+        make_68_cilia_sweep,           # 68  metachronal cilia beat wave along X
+        make_69_magnetotaxis,          # 69  magnetic bacteria aligning to slow-rotating field
+        make_70_surface_tension,       # 70  droplet blobs merge/split via surface tension
+        make_71_turbulence_burst,      # 71  kolmogorov energy cascade octaves
+        make_72_symbiosis,             # 72  two particle populations attract and flare on contact
     ]
     for idx, fn in enumerate(steps, start=1):
         if idx >= start_from:
